@@ -1,0 +1,13 @@
+services:
+  mcplexer:
+    build: .
+    command: ["serve", "--mode=http", "--addr=:3333", "--socket=/run/mcplexer.sock"]
+    ports:
+      - "3333:3333"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - MCPLEXER_DB_DSN=/app/data/mcplexer.db
+      - MCPLEXER_CONFIG=/app/data/mcplexer.yaml
+      - MCPLEXER_LOG_LEVEL=info
+    restart: unless-stopped

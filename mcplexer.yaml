@@ -1,0 +1,9 @@
+# MCPlexer Configuration
+# OAuth providers are seeded from built-in templates on first startup.
+# Configure workspaces, servers, and routes via the web UI.
+
+oauth_providers: []
+workspaces: []
+auth_scopes: []
+downstream_servers: []
+route_rules: []

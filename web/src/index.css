@@ -1,0 +1,127 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme {
+  /* ── Deep dark backgrounds ── */
+  --color-background: hsl(225 14% 5%);
+  --color-foreground: hsl(210 20% 93%);
+
+  /* ── Cards: slightly lifted from background ── */
+  --color-card: hsl(224 14% 9%);
+  --color-card-foreground: hsl(210 20% 93%);
+
+  /* ── Popovers ── */
+  --color-popover: hsl(224 14% 9%);
+  --color-popover-foreground: hsl(210 20% 93%);
+
+  /* ── Primary: electric cyan-blue accent ── */
+  --color-primary: hsl(205 95% 55%);
+  --color-primary-foreground: hsl(225 14% 5%);
+
+  /* ── Secondary: subtle elevated surface ── */
+  --color-secondary: hsl(224 12% 13%);
+  --color-secondary-foreground: hsl(210 15% 82%);
+
+  /* ── Muted: subdued text / surfaces ── */
+  --color-muted: hsl(224 10% 13%);
+  --color-muted-foreground: hsl(215 14% 63%);
+
+  /* ── Accent: matches primary glow ── */
+  --color-accent: hsl(205 90% 14%);
+  --color-accent-foreground: hsl(205 95% 65%);
+
+  /* ── Destructive: red-orange tint ── */
+  --color-destructive: hsl(0 72% 51%);
+  --color-destructive-foreground: hsl(0 0% 96%);
+
+  /* ── Borders & inputs ── */
+  --color-border: hsl(224 12% 18%);
+  --color-input: hsl(224 12% 18%);
+  --color-ring: hsl(205 95% 55%);
+
+  /* ── Sidebar: matches the deep dark theme ── */
+  --color-sidebar-background: hsl(226 16% 4%);
+  --color-sidebar-foreground: hsl(215 14% 65%);
+  --color-sidebar-primary: hsl(205 95% 55%);
+  --color-sidebar-primary-foreground: hsl(225 14% 5%);
+  --color-sidebar-accent: hsl(224 12% 11%);
+  --color-sidebar-accent-foreground: hsl(210 20% 93%);
+  --color-sidebar-border: hsl(224 12% 16%);
+  --color-sidebar-ring: hsl(205 95% 55%);
+
+  /* ── Chart colors: vibrant palette for data viz ── */
+  --color-chart-1: hsl(205 95% 55%);
+  --color-chart-2: hsl(160 70% 45%);
+  --color-chart-3: hsl(280 65% 60%);
+  --color-chart-4: hsl(40 90% 55%);
+  --color-chart-5: hsl(350 70% 55%);
+
+  --radius: 0;
+  --radius-xs: 0;
+  --radius-sm: 0;
+  --radius-md: 0;
+  --radius-lg: 0;
+  --radius-xl: 0;
+  --radius-2xl: 0;
+  --radius-3xl: 0;
+
+  /* ── Typography ── */
+  --font-sans: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco,
+    Consolas, "Liberation Mono", "Courier New", monospace;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco,
+    Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-sans);
+    font-feature-settings: "liga" 1, "calt" 1;
+  }
+
+  a, button, [role="button"], [type="button"], [type="submit"], [type="reset"],
+  label[for], select, summary, [tabindex]:not([tabindex="-1"]) {
+    cursor: pointer;
+  }
+
+  /* Selection highlight with accent color */
+  ::selection {
+    background-color: hsl(205 95% 55% / 0.25);
+    color: hsl(210 20% 95%);
+  }
+
+  /* Subtle focus ring using accent */
+  :focus-visible {
+    @apply outline-none ring-2 ring-ring/40 ring-offset-2 ring-offset-background;
+  }
+
+  /* Scrollbar styling for dark theme */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: hsl(224 12% 18%);
+    border-radius: 0;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(224 12% 24%);
+  }
+}

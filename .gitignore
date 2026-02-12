@@ -1,0 +1,30 @@
+# Binaries
+bin/
+/mcplexer
+*.exe
+
+# Go
+vendor/
+
+# Environment
+.env
+*.db
+data/
+
+# Web UI
+web/node_modules/
+web/dist/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Age keys
+*.age
+*.key
