@@ -28,3 +28,8 @@ Thumbs.db
 # Age keys
 *.age
 *.key
+
+# Site
+site/node_modules/
+site/.next/
+site/out/
