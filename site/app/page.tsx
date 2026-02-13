@@ -436,16 +436,31 @@ export default function HomePage() {
         <div className="mx-auto max-w-6xl px-4 sm:px-6">
           <div className="text-center mb-14">
             <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">
-              Three ways to{" "}
+              Four ways to{" "}
               <span className="text-cyan">configure</span>
             </h2>
             <p className="mt-4 text-text-muted text-sm max-w-xl mx-auto">
-              YAML for version-controlled config. Web UI for visual management.
-              MCP tools for AI-native configuration.
+              Desktop app for quick setup. YAML for version control. Web UI for
+              visual management. MCP tools for AI-native configuration.
             </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-surface border border-border p-6">
+              <div className="text-[10px] text-text-dim uppercase tracking-wider mb-3">
+                desktop app
+              </div>
+              <div className="terminal text-[11px] leading-6 p-4">
+                <span className="text-cyan">$</span> {config.name} setup<br />
+                <span className="text-green">{"✓"}</span> daemon started<br />
+                <span className="text-green">{"✓"}</span> config updated
+              </div>
+              <p className="mt-4 text-xs text-text-dim">
+                Native app with tray icon, one-click setup. Auto-starts
+                daemon and configures Claude Desktop.
+              </p>
+            </div>
+
             <div className="bg-surface border border-border p-6">
               <div className="text-[10px] text-text-dim uppercase tracking-wider mb-3">
                 yaml config
