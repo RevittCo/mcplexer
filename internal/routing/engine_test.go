@@ -3,6 +3,7 @@ package routing
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -67,6 +68,11 @@ func (m *mockRouteStore) GetAuditStats(context.Context, string, time.Time, time.
 func (m *mockRouteStore) GetDashboardTimeSeries(context.Context, time.Time, time.Time) ([]store.TimeSeriesPoint, error) {
 	return nil, nil
 }
+func (m *mockRouteStore) CreateToolApproval(context.Context, *store.ToolApproval) error { return nil }
+func (m *mockRouteStore) GetToolApproval(context.Context, string) (*store.ToolApproval, error) { return nil, nil }
+func (m *mockRouteStore) ListPendingApprovals(context.Context) ([]store.ToolApproval, error)   { return nil, nil }
+func (m *mockRouteStore) ResolveToolApproval(context.Context, string, string, string, string, string) error { return nil }
+func (m *mockRouteStore) ExpirePendingApprovals(context.Context, time.Time) (int, error) { return 0, nil }
 func (m *mockRouteStore) Tx(context.Context, func(store.Store) error) error { return nil }
 func (m *mockRouteStore) Ping(context.Context) error                        { return nil }
 func (m *mockRouteStore) Close() error                                      { return nil }
@@ -243,7 +249,7 @@ func TestMatchRoute(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result, err := matchRoute(rules, tt.ctx)
-			if err != tt.wantErr {
+			if !errors.Is(err, tt.wantErr) {
 				t.Fatalf("err = %v, want %v", err, tt.wantErr)
 			}
 			if tt.wantErr != nil {
@@ -430,7 +436,7 @@ func TestRouteWithFallback(t *testing.T) {
 				ToolName: tt.tool,
 			}, tt.clientRoot, tt.ancestors)
 
-			if err != tt.wantErr {
+			if !errors.Is(err, tt.wantErr) {
 				t.Fatalf("err = %v, want %v", err, tt.wantErr)
 			}
 			if tt.wantErr != nil {
@@ -516,7 +522,7 @@ func TestRouteWithFallback_PathScoped(t *testing.T) {
 				ToolName: tt.tool,
 			}, tt.clientRoot, ancestors)
 
-			if err != tt.wantErr {
+			if !errors.Is(err, tt.wantErr) {
 				t.Fatalf("err = %v, want %v", err, tt.wantErr)
 			}
 			if tt.wantErr != nil {
@@ -593,7 +599,7 @@ func TestMatchRoute_NamespaceAware(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result, err := matchRoute(rules, RouteContext{ToolName: tt.tool})
-			if err != tt.wantErr {
+			if !errors.Is(err, tt.wantErr) {
 				t.Fatalf("err = %v, want %v", err, tt.wantErr)
 			}
 			if tt.wantErr != nil {
@@ -653,7 +659,7 @@ func TestRoute_NamespaceAware(t *testing.T) {
 				WorkspaceID: "ws1",
 				ToolName:    tt.tool,
 			})
-			if err != tt.wantErr {
+			if !errors.Is(err, tt.wantErr) {
 				t.Fatalf("err = %v, want %v", err, tt.wantErr)
 			}
 			if tt.wantErr != nil {

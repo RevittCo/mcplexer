@@ -36,6 +36,8 @@ import {
 import type { Workspace } from '@/api/types'
 import { FolderOpen, Pencil, Plus, Trash2 } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { toast } from 'sonner'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 
 interface FormData {
   name: string
@@ -60,6 +62,7 @@ export function WorkspacesPage() {
   const [form, setForm] = useState<FormData>(emptyForm)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<Workspace | null>(null)
 
   function openCreate() {
     setEditing(null)
@@ -90,6 +93,7 @@ export function WorkspacesPage() {
         await createWorkspace(form)
       }
       setDialogOpen(false)
+      toast.success(editing ? 'Workspace updated' : 'Workspace created')
       refetch()
     } catch (err: unknown) {
       setSaveError(err instanceof Error ? err.message : 'Failed to save workspace')
@@ -98,13 +102,15 @@ export function WorkspacesPage() {
     }
   }
 
-  async function handleDelete(id: string) {
+  async function confirmDelete() {
+    if (!deleteTarget) return
     try {
-      await deleteWorkspace(id)
+      await deleteWorkspace(deleteTarget.id)
+      setDeleteTarget(null)
+      toast.success('Workspace deleted')
       refetch()
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed to delete workspace'
-      alert(msg)
+      toast.error(err instanceof Error ? err.message : 'Failed to delete workspace')
     }
   }
 
@@ -145,9 +151,9 @@ export function WorkspacesPage() {
                       <div className="flex flex-col items-center justify-center text-muted-foreground">
                         <FolderOpen className="mb-2 h-8 w-8 text-muted-foreground/50" />
                         <p className="text-sm">No workspaces configured</p>
-                        <p className="text-xs text-muted-foreground/60">
+                        <button onClick={openCreate} className="text-xs text-primary hover:underline">
                           Add a workspace to get started
-                        </p>
+                        </button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -187,7 +193,7 @@ export function WorkspacesPage() {
                                 variant="ghost"
                                 size="sm"
                                 className="h-8 w-8 p-0 hover:bg-destructive/10 hover:text-destructive"
-                                onClick={() => handleDelete(w.id)}
+                                onClick={() => setDeleteTarget(w)}
                               >
                                 <Trash2 className="h-3.5 w-3.5" />
                               </Button>
@@ -214,6 +220,16 @@ export function WorkspacesPage() {
         saving={saving}
         editing={!!editing}
         saveError={saveError}
+      />
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        title="Delete workspace"
+        description={`Are you sure you want to delete "${deleteTarget?.name}"?`}
+        confirmLabel="Delete"
+        variant="destructive"
+        onConfirm={confirmDelete}
       />
     </div>
   )

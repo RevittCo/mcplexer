@@ -15,8 +15,11 @@ import {
   createOAuthProvider, deleteOAuthProvider, discoverOIDC, listOAuthProviders, updateOAuthProvider,
 } from '@/api/client'
 import type { OAuthProvider } from '@/api/types'
-import { KeyRound, Loader2, Pencil, Plus, Search, Trash2 } from 'lucide-react'
+import { Info, KeyRound, Loader2, Pencil, Plus, Search, Trash2 } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { toast } from 'sonner'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 
 interface FormData {
   name: string
@@ -49,6 +52,7 @@ export function OAuthProvidersPage() {
   const [form, setForm] = useState<FormData>(emptyForm)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<OAuthProvider | null>(null)
 
   function openCreate() {
     setEditing(null)
@@ -85,6 +89,7 @@ export function OAuthProvidersPage() {
         await createOAuthProvider(form)
       }
       setDialogOpen(false)
+      toast.success(editing ? 'Provider updated' : 'Provider created')
       refetch()
     } catch (err: unknown) {
       setSaveError(err instanceof Error ? err.message : 'Failed to save OAuth provider')
@@ -93,13 +98,15 @@ export function OAuthProvidersPage() {
     }
   }
 
-  async function handleDelete(id: string) {
+  async function confirmDelete() {
+    if (!deleteTarget) return
     try {
-      await deleteOAuthProvider(id)
+      await deleteOAuthProvider(deleteTarget.id)
+      setDeleteTarget(null)
+      toast.success('Provider deleted')
       refetch()
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed to delete OAuth provider'
-      alert(msg)
+      toast.error(err instanceof Error ? err.message : 'Failed to delete OAuth provider')
     }
   }
 
@@ -111,6 +118,15 @@ export function OAuthProvidersPage() {
           <Plus className="mr-2 h-4 w-4" />
           Add OAuth Provider
         </Button>
+      </div>
+
+      <div className="flex items-start gap-3 rounded-md border border-border/60 bg-muted/30 px-4 py-3">
+        <Info className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+        <p className="text-sm text-muted-foreground">
+          OAuth providers are typically managed automatically through{' '}
+          <Link to="/setup" className="text-primary hover:underline">Quick Setup</Link>.
+          Edit these only if you need custom OAuth configurations.
+        </p>
       </div>
 
       <Card>
@@ -140,9 +156,9 @@ export function OAuthProvidersPage() {
                       <div className="flex flex-col items-center justify-center text-muted-foreground">
                         <KeyRound className="mb-2 h-8 w-8 text-muted-foreground/50" />
                         <p className="text-sm">No OAuth providers configured</p>
-                        <p className="text-xs text-muted-foreground/60">
-                          Add an OAuth provider for service authentication
-                        </p>
+                        <button onClick={openCreate} className="text-xs text-primary hover:underline">
+                          Add an OAuth provider to get started
+                        </button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -188,7 +204,7 @@ export function OAuthProvidersPage() {
                                 variant="ghost"
                                 size="sm"
                                 className="h-8 w-8 p-0 hover:bg-destructive/10 hover:text-destructive"
-                                onClick={() => handleDelete(provider.id)}
+                                onClick={() => setDeleteTarget(provider)}
                               >
                                 <Trash2 className="h-3.5 w-3.5" />
                               </Button>
@@ -215,6 +231,16 @@ export function OAuthProvidersPage() {
         saving={saving}
         editing={!!editing}
         saveError={saveError}
+      />
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        title="Delete OAuth provider"
+        description={`Are you sure you want to delete "${deleteTarget?.name}"?`}
+        confirmLabel="Delete"
+        variant="destructive"
+        onConfirm={confirmDelete}
       />
     </div>
   )

@@ -10,6 +10,8 @@ import {
   Menu,
   Play,
   Server,
+  ShieldCheck,
+  Zap,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useState } from 'react'
@@ -23,14 +25,19 @@ interface NavItem {
 
 const mainNav: NavItem[] = [
   { label: 'Dashboard', href: '/', icon: <LayoutDashboard className="h-4 w-4" /> },
+  { label: 'Quick Setup', href: '/setup', icon: <Zap className="h-4 w-4" /> },
+  { label: 'Approvals', href: '/approvals', icon: <ShieldCheck className="h-4 w-4" /> },
   { label: 'Audit Logs', href: '/audit', icon: <FileText className="h-4 w-4" /> },
 ]
 
 const configNav: NavItem[] = [
   { label: 'Workspaces', href: '/config/workspaces', icon: <Globe className="h-4 w-4" /> },
   { label: 'Route Rules', href: '/config/routes', icon: <GitBranch className="h-4 w-4" /> },
-  { label: 'Auth Scopes', href: '/config/auth-scopes', icon: <Lock className="h-4 w-4" /> },
+  { label: 'Credentials', href: '/config/auth-scopes', icon: <Lock className="h-4 w-4" /> },
   { label: 'Servers', href: '/config/downstreams', icon: <Server className="h-4 w-4" /> },
+]
+
+const advancedNav: NavItem[] = [
   { label: 'OAuth Providers', href: '/config/oauth-providers', icon: <KeyRound className="h-4 w-4" /> },
 ]
 
@@ -161,6 +168,11 @@ function SidebarNav({ configOpen, setConfigOpen, onNavigate }: {
             {configNav.map((item) => (
               <NavLink key={item.href} item={item} onNavigate={onNavigate} />
             ))}
+            <div className="border-t border-sidebar-border/40 mt-1.5 pt-1.5">
+              {advancedNav.map((item) => (
+                <NavLink key={item.href} item={item} onNavigate={onNavigate} />
+              ))}
+            </div>
           </div>
         </div>
       </div>

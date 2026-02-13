@@ -19,6 +19,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/revitteth/mcplexer/internal/api"
+	"github.com/revitteth/mcplexer/internal/approval"
 	"github.com/revitteth/mcplexer/internal/audit"
 	"github.com/revitteth/mcplexer/internal/auth"
 	"github.com/revitteth/mcplexer/internal/config"
@@ -60,10 +61,14 @@ func run() error {
 		return cmdDryRun(args)
 	case "secret":
 		return cmdSecret(args)
+	case "daemon":
+		return cmdDaemon(args)
+	case "setup":
+		return cmdSetup()
 	case "control-server":
 		return cmdControlServer()
 	default:
-		return fmt.Errorf("unknown command: %s\nUsage: mcplexer [serve|connect|init|status|dry-run|secret|control-server]", subcmd)
+		return fmt.Errorf("unknown command: %s\nUsage: mcplexer [serve|connect|init|status|dry-run|secret|daemon|setup|control-server]", subcmd)
 	}
 }
 
@@ -150,13 +155,22 @@ func runHTTP(ctx context.Context, cfg *Config, db *sqlite.DB, cfgSvc *config.Ser
 	manager := downstream.NewManager(db, authInj)
 	defer manager.Shutdown(ctx) //nolint:errcheck
 
+	approvalBus := approval.NewBus()
+	approvalMgr := approval.NewManager(db, approvalBus)
+	approvalMgr.ExpireStale(ctx)
+	defer approvalMgr.Shutdown()
+
+	auditBus := audit.NewBus()
 	router := api.NewRouter(api.RouterDeps{
-		Store:       db,
-		ConfigSvc:   cfgSvc,
-		Engine:      engine,
-		Manager:     manager,
-		FlowManager: fm,
-		Encryptor:   enc,
+		Store:           db,
+		ConfigSvc:       cfgSvc,
+		Engine:          engine,
+		Manager:         manager,
+		FlowManager:     fm,
+		Encryptor:       enc,
+		AuditBus:        auditBus,
+		ApprovalManager: approvalMgr,
+		ApprovalBus:     approvalBus,
 	})
 
 	srv := &http.Server{
@@ -192,8 +206,14 @@ func runStdio(ctx context.Context, cfg *Config, db *sqlite.DB) error {
 	manager := downstream.NewManager(db, authInj)
 	defer manager.Shutdown(ctx) //nolint:errcheck
 
-	auditor := audit.NewLogger(db, db)
-	gw := gateway.NewServer(db, engine, manager, auditor, gateway.TransportStdio)
+	approvalBus := approval.NewBus()
+	approvalMgr := approval.NewManager(db, approvalBus)
+	approvalMgr.ExpireStale(ctx)
+	defer approvalMgr.Shutdown()
+
+	auditor := audit.NewLogger(db, db, nil)
+	gw := gateway.NewServer(db, engine, manager, auditor, gateway.TransportStdio,
+		gateway.WithApprovals(approvalMgr))
 	return gw.RunStdio(ctx)
 }
 
@@ -499,18 +519,27 @@ func runHTTPAndSocket(ctx context.Context, cfg *Config, db *sqlite.DB, cfgSvc *c
 	manager := downstream.NewManager(db, authInj)
 	defer manager.Shutdown(ctx) //nolint:errcheck
 
-	auditor := audit.NewLogger(db, db)
+	approvalBus := approval.NewBus()
+	approvalMgr := approval.NewManager(db, approvalBus)
+	approvalMgr.ExpireStale(ctx)
+	defer approvalMgr.Shutdown()
+
+	auditBus := audit.NewBus()
+	auditor := audit.NewLogger(db, db, auditBus)
 	g, ctx := errgroup.WithContext(ctx)
 
 	// HTTP server
 	g.Go(func() error {
 		router := api.NewRouter(api.RouterDeps{
-			Store:       db,
-			ConfigSvc:   cfgSvc,
-			Engine:      engine,
-			Manager:     manager,
-			FlowManager: fm,
-			Encryptor:   enc,
+			Store:           db,
+			ConfigSvc:       cfgSvc,
+			Engine:          engine,
+			Manager:         manager,
+			FlowManager:     fm,
+			Encryptor:       enc,
+			AuditBus:        auditBus,
+			ApprovalManager: approvalMgr,
+			ApprovalBus:     approvalBus,
 		})
 		srv := &http.Server{Addr: cfg.HTTPAddr, Handler: router}
 		errCh := make(chan error, 1)
@@ -531,7 +560,7 @@ func runHTTPAndSocket(ctx context.Context, cfg *Config, db *sqlite.DB, cfgSvc *c
 
 	// Unix socket listener
 	g.Go(func() error {
-		return runSocket(ctx, cfg.SocketPath, db, engine, manager, auditor)
+		return runSocket(ctx, cfg.SocketPath, db, engine, manager, auditor, approvalMgr)
 	})
 
 	return g.Wait()
@@ -546,6 +575,7 @@ func runSocket(
 	engine *routing.Engine,
 	manager *downstream.Manager,
 	auditor *audit.Logger,
+	approvalMgr *approval.Manager,
 ) error {
 	// Clean up stale socket file
 	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
@@ -580,7 +610,7 @@ func runSocket(
 			}
 			return fmt.Errorf("accept: %w", err)
 		}
-		go handleSocketConn(ctx, conn, s, engine, manager, auditor)
+		go handleSocketConn(ctx, conn, s, engine, manager, auditor, approvalMgr)
 	}
 }
 
@@ -591,11 +621,13 @@ func handleSocketConn(
 	engine *routing.Engine,
 	manager *downstream.Manager,
 	auditor *audit.Logger,
+	approvalMgr *approval.Manager,
 ) {
 	defer conn.Close()
 	slog.Info("socket connection accepted", "remote", conn.RemoteAddr())
 
-	gw := gateway.NewServer(s, engine, manager, auditor, gateway.TransportSocket)
+	gw := gateway.NewServer(s, engine, manager, auditor, gateway.TransportSocket,
+		gateway.WithApprovals(approvalMgr))
 	if err := gw.RunConn(ctx, conn, conn); err != nil {
 		slog.Error("socket connection error", "err", err)
 	}

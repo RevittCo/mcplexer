@@ -56,12 +56,15 @@ func (m *Manager) Call(
 		return nil, fmt.Errorf("get or start instance: %w", err)
 	}
 
-	params := mustMarshal(map[string]any{
+	params, err := json.Marshal(map[string]any{
 		"name":      toolName,
 		"arguments": json.RawMessage(args),
 	})
+	if err != nil {
+		return nil, fmt.Errorf("marshal call params: %w", err)
+	}
 
-	return inst.Call(ctx, "tools/call", params)
+	return inst.Call(ctx, "tools/call", json.RawMessage(params))
 }
 
 func (m *Manager) getOrStart(ctx context.Context, key InstanceKey) (downstream, error) {
@@ -290,10 +293,3 @@ func writeJSONLine(w io.Writer, v any) error {
 	return err
 }
 
-func mustMarshal(v any) json.RawMessage {
-	data, err := json.Marshal(v)
-	if err != nil {
-		panic(err)
-	}
-	return data
-}

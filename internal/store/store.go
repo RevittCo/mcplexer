@@ -15,6 +15,7 @@ type Store interface {
 	RouteRuleStore
 	SessionStore
 	AuditStore
+	ToolApprovalStore
 	Tx(ctx context.Context, fn func(Store) error) error
 	Ping(ctx context.Context) error
 	Close() error
@@ -86,4 +87,13 @@ type AuditStore interface {
 	QueryAuditRecords(ctx context.Context, f AuditFilter) ([]AuditRecord, int, error)
 	GetAuditStats(ctx context.Context, workspaceID string, after, before time.Time) (*AuditStats, error)
 	GetDashboardTimeSeries(ctx context.Context, after, before time.Time) ([]TimeSeriesPoint, error)
+}
+
+// ToolApprovalStore manages tool call approval records.
+type ToolApprovalStore interface {
+	CreateToolApproval(ctx context.Context, a *ToolApproval) error
+	GetToolApproval(ctx context.Context, id string) (*ToolApproval, error)
+	ListPendingApprovals(ctx context.Context) ([]ToolApproval, error)
+	ResolveToolApproval(ctx context.Context, id, status, approverSessionID, approverType, resolution string) error
+	ExpirePendingApprovals(ctx context.Context, before time.Time) (int, error)
 }

@@ -52,7 +52,10 @@ func (fm *FlowManager) AuthorizeURL(ctx context.Context, authScopeID string) (st
 		}
 	}
 
-	state := fm.stateStore.Create(authScopeID, codeVerifier)
+	state, err := fm.stateStore.Create(authScopeID, codeVerifier)
+	if err != nil {
+		return "", fmt.Errorf("create oauth state: %w", err)
+	}
 	return fm.buildAuthorizeURL(provider, state, codeVerifier)
 }
 

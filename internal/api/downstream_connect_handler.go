@@ -25,6 +25,7 @@ type connectRequest struct {
 	ClientID     string `json:"client_id"`
 	ClientSecret string `json:"client_secret"`
 	ScopeName    string `json:"scope_name"`
+	AccountLabel string `json:"account_label"`
 }
 
 type connectResponse struct {
@@ -93,7 +94,11 @@ func (h *downstreamConnectHandler) connect(w http.ResponseWriter, r *http.Reques
 		// Step 2: Create or find auth scope.
 		scopeName := req.ScopeName
 		if scopeName == "" {
-			scopeName = server.ToolNamespace + "_oauth"
+			if req.AccountLabel != "" {
+				scopeName = server.ToolNamespace + "_oauth_" + sanitizeLabel(req.AccountLabel)
+			} else {
+				scopeName = server.ToolNamespace + "_oauth"
+			}
 		}
 		scope, txErr = h.findOrCreateScope(ctx, tx, scopeName, provider.ID)
 		if txErr != nil {
@@ -101,8 +106,12 @@ func (h *downstreamConnectHandler) connect(w http.ResponseWriter, r *http.Reques
 		}
 
 		// Step 3: Create route rule (idempotent).
+		routeName := ""
+		if req.AccountLabel != "" {
+			routeName = server.Name + " (" + req.AccountLabel + ")"
+		}
 		rule, txErr = h.findOrCreateRoute(
-			ctx, tx, req.WorkspaceID, server.ID, scope.ID)
+			ctx, tx, req.WorkspaceID, server.ID, scope.ID, routeName)
 		if txErr != nil {
 			return txErr
 		}
@@ -152,12 +161,8 @@ func (h *downstreamConnectHandler) findOrConfigureProvider(
 		}
 	}
 
-	if tmplProvider != nil {
-		// Template provider found — update with client credentials.
-		if req.ClientID == "" {
-			return nil, fmt.Errorf(
-				"client_id is required for %s (template-based provider)", server.Name)
-		}
+	// If credentials were provided, use the template path.
+	if req.ClientID != "" && tmplProvider != nil {
 		tmplProvider.ClientID = req.ClientID
 		tmplProvider.UpdatedAt = time.Now().UTC()
 
@@ -179,8 +184,35 @@ func (h *downstreamConnectHandler) findOrConfigureProvider(
 		return tmplProvider, nil
 	}
 
-	// No template provider — try auto-discovery + DCR.
-	return h.autoDiscoverAndRegister(ctx, tx, server)
+	// No credentials — try auto-discovery + DCR for HTTP servers.
+	if server.Transport == "http" && server.URL != nil {
+		discovered, discErr := h.autoDiscoverAndRegister(ctx, tx, server)
+		if discErr == nil {
+			return discovered, nil
+		}
+		// Auto-discovery failed — give a helpful error if template exists.
+		if tmplProvider != nil {
+			tmpl := oauth.GetTemplate(server.ToolNamespace)
+			hint := ""
+			if tmpl != nil && tmpl.SetupURL != "" {
+				hint = fmt.Sprintf(
+					"; provide client_id/secret from %s", tmpl.SetupURL)
+			}
+			return nil, fmt.Errorf(
+				"auto-discovery failed for %s%s: %w",
+				server.Name, hint, discErr)
+		}
+		return nil, discErr
+	}
+
+	// Non-HTTP server with template but no credentials.
+	if tmplProvider != nil {
+		return nil, fmt.Errorf(
+			"client_id is required for %s (template-based provider)",
+			server.Name)
+	}
+	return nil, fmt.Errorf(
+		"no OAuth provider configured for %s", server.Name)
 }
 
 // autoDiscoverAndRegister runs MCP OAuth discovery and DCR for the server.
@@ -281,33 +313,28 @@ func (h *downstreamConnectHandler) findOrCreateScope(
 }
 
 // findOrCreateRoute creates a route rule or returns an existing one.
+// Matches on (workspace_id, server_id, scope_id) so multiple accounts
+// for the same server in the same workspace each get their own route.
 func (h *downstreamConnectHandler) findOrCreateRoute(
 	ctx context.Context,
 	tx store.Store,
-	workspaceID, serverID, scopeID string,
+	workspaceID, serverID, scopeID, routeName string,
 ) (*store.RouteRule, error) {
-	// Check for existing rule with same server + workspace.
 	rules, err := tx.ListRouteRules(ctx, workspaceID)
 	if err != nil {
 		return nil, fmt.Errorf("list routes: %w", err)
 	}
 	for i := range rules {
 		if rules[i].DownstreamServerID == serverID &&
-			rules[i].WorkspaceID == workspaceID {
-			// Update scope if changed.
-			if rules[i].AuthScopeID != scopeID {
-				rules[i].AuthScopeID = scopeID
-				rules[i].UpdatedAt = time.Now().UTC()
-				if err := tx.UpdateRouteRule(ctx, &rules[i]); err != nil {
-					return nil, fmt.Errorf("update route: %w", err)
-				}
-			}
+			rules[i].WorkspaceID == workspaceID &&
+			rules[i].AuthScopeID == scopeID {
 			return &rules[i], nil
 		}
 	}
 
 	now := time.Now().UTC()
 	rule := store.RouteRule{
+		Name:               routeName,
 		Priority:           100,
 		WorkspaceID:        workspaceID,
 		PathGlob:           "**",
@@ -324,4 +351,59 @@ func (h *downstreamConnectHandler) findOrCreateRoute(
 		return nil, fmt.Errorf("create route: %w", err)
 	}
 	return &rule, nil
+}
+
+// sanitizeLabel converts an account label to a safe scope name suffix.
+func sanitizeLabel(label string) string {
+	label = strings.ToLower(strings.TrimSpace(label))
+	label = strings.ReplaceAll(label, " ", "_")
+	var b strings.Builder
+	for _, r := range label {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '_' {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+type oauthCapabilities struct {
+	HasTemplate           bool                   `json:"has_template"`
+	Template              *oauth.ProviderTemplate `json:"template,omitempty"`
+	SupportsAutoDiscovery bool                   `json:"supports_auto_discovery"`
+	NeedsCredentials      bool                   `json:"needs_credentials"`
+}
+
+// GET /api/v1/downstreams/{id}/oauth-capabilities
+func (h *downstreamConnectHandler) capabilities(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	ctx := r.Context()
+
+	server, err := h.store.GetDownstreamServer(ctx, id)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "downstream server not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to get server")
+		return
+	}
+
+	caps := oauthCapabilities{NeedsCredentials: true}
+
+	// Check for a built-in template.
+	if tmpl := oauth.GetTemplate(server.ToolNamespace); tmpl != nil {
+		caps.HasTemplate = true
+		caps.Template = tmpl
+		caps.SupportsAutoDiscovery = tmpl.SupportsAutoDiscovery
+		caps.NeedsCredentials = tmpl.NeedsSecret && !tmpl.SupportsAutoDiscovery
+	} else if server.Transport == "http" && server.URL != nil {
+		// No template — probe the server for OAuth discovery support.
+		metadata, discErr := oauth.DiscoverOAuthServer(ctx, *server.URL)
+		if discErr == nil && metadata.RegistrationEndpoint != "" {
+			caps.SupportsAutoDiscovery = true
+			caps.NeedsCredentials = false
+		}
+	}
+
+	writeJSON(w, http.StatusOK, caps)
 }

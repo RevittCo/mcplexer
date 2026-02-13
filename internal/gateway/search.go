@@ -169,3 +169,50 @@ func marshalErrorResult(text string) json.RawMessage {
 	data, _ := json.Marshal(result)
 	return data
 }
+
+// approvalToolDefinitions returns the built-in MCP tools for the approval system.
+func approvalToolDefinitions() []Tool {
+	return []Tool{
+		{
+			Name:        "mcplexer__list_pending_approvals",
+			Description: "List pending tool call approvals waiting for review. Returns approval IDs, tool names, justifications, and requesting agent info. Your own pending requests are excluded.",
+			InputSchema: json.RawMessage(`{"type": "object", "properties": {}}`),
+		},
+		{
+			Name:        "mcplexer__approve_tool_call",
+			Description: "Approve a pending tool call request. You cannot approve your own requests.",
+			InputSchema: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"approval_id": {
+						"type": "string",
+						"description": "The ID of the pending approval to approve"
+					},
+					"reason": {
+						"type": "string",
+						"description": "Optional reason for approving"
+					}
+				},
+				"required": ["approval_id"]
+			}`),
+		},
+		{
+			Name:        "mcplexer__deny_tool_call",
+			Description: "Deny a pending tool call request. You cannot deny your own requests. A reason is required.",
+			InputSchema: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"approval_id": {
+						"type": "string",
+						"description": "The ID of the pending approval to deny"
+					},
+					"reason": {
+						"type": "string",
+						"description": "Reason for denying the tool call"
+					}
+				},
+				"required": ["approval_id", "reason"]
+			}`),
+		},
+	}
+}

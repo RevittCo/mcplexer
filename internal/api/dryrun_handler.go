@@ -99,6 +99,16 @@ func (h *dryRunHandler) run(w http.ResponseWriter, r *http.Request) {
 		resp.Matched = true
 		resp.Policy = "deny"
 
+		var de *routing.DeniedError
+		if errors.As(err, &de) {
+			for i := range rules {
+				if rules[i].ID == de.RuleID {
+					resp.MatchedRule = &rules[i]
+					break
+				}
+			}
+		}
+
 	case errors.Is(err, routing.ErrNoRoute):
 		ws, wsErr := h.workspaceStore.GetWorkspace(ctx, req.WorkspaceID)
 		if wsErr == nil {

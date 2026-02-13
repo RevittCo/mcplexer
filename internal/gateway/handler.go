@@ -3,12 +3,14 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/revitteth/mcplexer/internal/approval"
 	"github.com/revitteth/mcplexer/internal/audit"
 	"github.com/revitteth/mcplexer/internal/routing"
 	"github.com/revitteth/mcplexer/internal/store"
@@ -23,11 +25,12 @@ type ToolLister interface {
 
 // handler contains the logic for each MCP method.
 type handler struct {
-	store    store.Store
-	engine   *routing.Engine
-	manager  ToolLister
-	sessions *sessionManager
-	auditor  *audit.Logger
+	store     store.Store
+	engine    *routing.Engine
+	manager   ToolLister
+	sessions  *sessionManager
+	auditor   *audit.Logger
+	approvals *approval.Manager // nil = approval system disabled
 }
 
 func newHandler(
@@ -36,13 +39,15 @@ func newHandler(
 	m ToolLister,
 	a *audit.Logger,
 	t TransportMode,
+	approvals *approval.Manager,
 ) *handler {
 	return &handler{
-		store:    s,
-		engine:   e,
-		manager:  m,
-		sessions: newSessionManager(s, t),
-		auditor:  a,
+		store:     s,
+		engine:    e,
+		manager:   m,
+		sessions:  newSessionManager(s, t),
+		auditor:   a,
+		approvals: approvals,
 	}
 }
 
@@ -145,6 +150,11 @@ func (h *handler) handleToolsList(
 		tools = append(tools, searchToolDefinition())
 	}
 
+	// Include approval tools when the approval system is enabled.
+	if h.approvals != nil {
+		tools = append(tools, approvalToolDefinitions()...)
+	}
+
 	// Only advertise tools the current session can actually route to.
 	tools = h.filterByWorkspaceRoutes(ctx, tools)
 
@@ -207,6 +217,15 @@ func (h *handler) handleToolsCall(
 		return nil, rpcErr
 	}
 
+	// Two-phase approval interception.
+	if routeResult.RequiresApproval && h.approvals != nil {
+		result, rpcErr := h.handleApprovalGate(ctx, req, routeResult, originalTool, start)
+		if result != nil || rpcErr != nil {
+			return result, rpcErr
+		}
+		// Approval granted — fall through to dispatch.
+	}
+
 	// Dispatch to downstream.
 	result, err := h.manager.Call(
 		ctx,
@@ -226,6 +245,87 @@ func (h *handler) handleToolsCall(
 
 	h.recordAudit(ctx, req.Name, req.Arguments, routeResult, result, nil, start)
 	return result, nil
+}
+
+// handleApprovalGate implements two-phase approval interception.
+// Phase 1: no _justification → return error asking for it.
+// Phase 2: _justification present → block until approved/denied/timeout.
+// Returns (nil, nil) when approved (caller should proceed to dispatch).
+func (h *handler) handleApprovalGate(
+	ctx context.Context,
+	req CallToolRequest,
+	route *routing.RouteResult,
+	originalTool string,
+	start time.Time,
+) (json.RawMessage, *RPCError) {
+	// Parse arguments to check for _justification.
+	var args map[string]json.RawMessage
+	if len(req.Arguments) > 0 {
+		_ = json.Unmarshal(req.Arguments, &args)
+	}
+
+	justRaw, hasJust := args["_justification"]
+	var justification string
+	if hasJust {
+		_ = json.Unmarshal(justRaw, &justification)
+	}
+	justification = strings.TrimSpace(justification)
+
+	// Phase 1: no justification provided.
+	if justification == "" {
+		result := marshalErrorResult(
+			"This tool requires approval before execution. " +
+				"Retry your call with an additional `_justification` field " +
+				"explaining why you need to use this tool.",
+		)
+		h.recordAudit(ctx, req.Name, req.Arguments, route, result, nil, start)
+		return result, nil
+	}
+
+	// Phase 2: justification present — strip it from args and block.
+	delete(args, "_justification")
+	cleanArgs, _ := json.Marshal(args)
+	req.Arguments = cleanArgs
+
+	timeout := route.ApprovalTimeout
+	if timeout <= 0 {
+		timeout = 300
+	}
+
+	rec := &store.ToolApproval{
+		RequestSessionID:   h.sessions.sessionID(),
+		RequestClientType:  h.sessions.clientType(),
+		RequestModel:       h.sessions.modelHint(),
+		WorkspaceID:        h.sessions.workspaceID(),
+		ToolName:           req.Name,
+		Arguments:          string(cleanArgs),
+		Justification:      justification,
+		RouteRuleID:        route.MatchedRuleID,
+		DownstreamServerID: route.DownstreamServerID,
+		AuthScopeID:        route.AuthScopeID,
+		TimeoutSec:         timeout,
+	}
+
+	approved, err := h.approvals.RequestApproval(ctx, rec)
+	if err != nil {
+		rpcErr := &RPCError{
+			Code:    CodeInternalError,
+			Message: fmt.Sprintf("approval request failed: %v", err),
+		}
+		h.recordAudit(ctx, req.Name, req.Arguments, route, nil, rpcErr, start)
+		return nil, rpcErr
+	}
+
+	if !approved {
+		result := marshalErrorResult(
+			fmt.Sprintf("Tool call denied. Reason: %s", rec.Resolution),
+		)
+		h.recordAudit(ctx, req.Name, req.Arguments, route, result, nil, start)
+		return result, nil
+	}
+
+	// Approved — return nil to signal caller to proceed with dispatch.
+	return nil, nil
 }
 
 // recordAudit creates and persists an audit record for a tool call.
@@ -296,12 +396,96 @@ func (h *handler) handleBuiltinCall(
 			return nil, &RPCError{Code: CodeInvalidParams, Message: err.Error()}
 		}
 		return h.handleSearchTools(ctx, args.Query)
+
+	case "mcplexer__list_pending_approvals":
+		return h.handleListPendingApprovals()
+
+	case "mcplexer__approve_tool_call":
+		var args struct {
+			ApprovalID string `json:"approval_id"`
+			Reason     string `json:"reason"`
+		}
+		if err := json.Unmarshal(req.Arguments, &args); err != nil {
+			return nil, &RPCError{Code: CodeInvalidParams, Message: err.Error()}
+		}
+		return h.handleResolveApproval(args.ApprovalID, args.Reason, true)
+
+	case "mcplexer__deny_tool_call":
+		var args struct {
+			ApprovalID string `json:"approval_id"`
+			Reason     string `json:"reason"`
+		}
+		if err := json.Unmarshal(req.Arguments, &args); err != nil {
+			return nil, &RPCError{Code: CodeInvalidParams, Message: err.Error()}
+		}
+		if args.Reason == "" {
+			return nil, &RPCError{Code: CodeInvalidParams, Message: "reason is required for denial"}
+		}
+		return h.handleResolveApproval(args.ApprovalID, args.Reason, false)
+
 	default:
 		return nil, &RPCError{
 			Code:    CodeMethodNotFound,
 			Message: fmt.Sprintf("unknown built-in: %s", req.Name),
 		}
 	}
+}
+
+func (h *handler) handleListPendingApprovals() (json.RawMessage, *RPCError) {
+	if h.approvals == nil {
+		return marshalToolResult("Approval system is not enabled."), nil
+	}
+
+	pending := h.approvals.ListPending(h.sessions.sessionID())
+	if len(pending) == 0 {
+		return marshalToolResult("No pending approvals."), nil
+	}
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "Found %d pending approval(s):\n", len(pending))
+	for _, a := range pending {
+		fmt.Fprintf(&b, "\n## %s\n", a.ID)
+		fmt.Fprintf(&b, "Tool: %s\n", a.ToolName)
+		fmt.Fprintf(&b, "Justification: %s\n", a.Justification)
+		fmt.Fprintf(&b, "Requested by: %s (%s)\n", a.RequestClientType, a.RequestModel)
+		fmt.Fprintf(&b, "Arguments: %s\n", a.Arguments)
+		fmt.Fprintf(&b, "Created: %s\n", a.CreatedAt.Format(time.RFC3339))
+	}
+	return marshalToolResult(b.String()), nil
+}
+
+func (h *handler) handleResolveApproval(
+	approvalID, reason string, approved bool,
+) (json.RawMessage, *RPCError) {
+	if h.approvals == nil {
+		return marshalErrorResult("Approval system is not enabled."), nil
+	}
+	if approvalID == "" {
+		return nil, &RPCError{Code: CodeInvalidParams, Message: "approval_id is required"}
+	}
+
+	err := h.approvals.Resolve(
+		approvalID,
+		h.sessions.sessionID(),
+		"mcp_agent",
+		reason,
+		approved,
+	)
+	if err != nil {
+		if errors.Is(err, approval.ErrSelfApproval) {
+			return marshalErrorResult("You cannot approve your own tool call request."), nil
+		}
+		if errors.Is(err, approval.ErrAlreadyResolved) {
+			return marshalErrorResult("This approval has already been resolved."), nil
+		}
+		return nil, &RPCError{Code: CodeInternalError, Message: err.Error()}
+	}
+
+	action := "denied"
+	if approved {
+		action = "approved"
+	}
+	return marshalToolResult(fmt.Sprintf("Tool call %s successfully %s.", approvalID, action)), nil
 }
 
 // extractOriginalToolName strips the namespace prefix.
@@ -344,10 +528,10 @@ func extractToolErrorText(result json.RawMessage) string {
 }
 
 func mapRouteError(err error) *RPCError {
-	switch err {
-	case routing.ErrNoRoute:
+	switch {
+	case errors.Is(err, routing.ErrNoRoute):
 		return &RPCError{Code: CodeRouteNotFound, Message: "no matching route"}
-	case routing.ErrDenied:
+	case errors.Is(err, routing.ErrDenied):
 		return &RPCError{Code: CodeRouteNotFound, Message: "route denied by policy"}
 	default:
 		return &RPCError{Code: CodeInternalError, Message: err.Error()}

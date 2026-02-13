@@ -27,11 +27,7 @@ export function useApi<T>(fetcher: () => Promise<T>): UseApiReturn<T> {
 
     // Set loading state for subsequent fetches (not the initial one which is already loading: true)
     if (trigger > 0) {
-      Promise.resolve().then(() => {
-        if (active) {
-          setState((prev) => ({ ...prev, loading: true, error: null }))
-        }
-      })
+      setState((prev) => ({ ...prev, loading: true, error: null }))
     }
     fetcher()
       .then((data) => {

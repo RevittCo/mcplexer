@@ -12,11 +12,12 @@ import (
 type Logger struct {
 	store store.AuditStore
 	scope store.AuthScopeStore
+	bus   *Bus
 }
 
-// NewLogger creates an audit Logger.
-func NewLogger(auditStore store.AuditStore, scopeStore store.AuthScopeStore) *Logger {
-	return &Logger{store: auditStore, scope: scopeStore}
+// NewLogger creates an audit Logger. The bus parameter is optional (nil-safe).
+func NewLogger(auditStore store.AuditStore, scopeStore store.AuthScopeStore, bus *Bus) *Logger {
+	return &Logger{store: auditStore, scope: scopeStore, bus: bus}
 }
 
 // Record redacts sensitive parameters and inserts the audit record.
@@ -32,6 +33,9 @@ func (l *Logger) Record(ctx context.Context, rec *store.AuditRecord) error {
 
 	if err := l.store.InsertAuditRecord(ctx, rec); err != nil {
 		return fmt.Errorf("insert audit record: %w", err)
+	}
+	if l.bus != nil {
+		l.bus.Publish(rec)
 	}
 	return nil
 }

@@ -10,6 +10,7 @@ import (
 	"os"
 	"sync"
 
+	"github.com/revitteth/mcplexer/internal/approval"
 	"github.com/revitteth/mcplexer/internal/audit"
 	"github.com/revitteth/mcplexer/internal/downstream"
 	"github.com/revitteth/mcplexer/internal/routing"
@@ -29,11 +30,28 @@ func NewServer(
 	manager *downstream.Manager,
 	auditor *audit.Logger,
 	transport TransportMode,
+	opts ...ServerOption,
 ) *Server {
+	var approvals *approval.Manager
+	for _, o := range opts {
+		o.apply(&approvals)
+	}
 	return &Server{
-		handler: newHandler(s, engine, manager, auditor, transport),
+		handler: newHandler(s, engine, manager, auditor, transport, approvals),
 	}
 }
+
+// ServerOption configures optional server features.
+type ServerOption interface {
+	apply(approvals **approval.Manager)
+}
+
+type withApprovals struct{ m *approval.Manager }
+
+func (o withApprovals) apply(approvals **approval.Manager) { *approvals = o.m }
+
+// WithApprovals enables the tool call approval system.
+func WithApprovals(m *approval.Manager) ServerOption { return withApprovals{m} }
 
 // RunStdio runs the MCP server over stdio (stdin/stdout).
 func (s *Server) RunStdio(ctx context.Context) error {

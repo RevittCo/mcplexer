@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -32,13 +32,14 @@ import {
   deleteDownstream,
   getDownstreamOAuthStatus,
   listDownstreams,
-
   updateDownstream,
 } from '@/api/client'
 import type { DownstreamOAuthStatusEntry, DownstreamServer } from '@/api/types'
 import { ConnectDialog } from './ConnectDialog'
-import { Copy, Link, Pause, Pencil, Play, Plus, Server, Trash2 } from 'lucide-react'
+import { AlertCircle, Clock, Copy, Link, Pause, Pencil, Play, Plus, Server, Trash2 } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { toast } from 'sonner'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 
 interface FormData {
   name: string
@@ -78,35 +79,86 @@ export function DownstreamsPage() {
   const [connectDialogOpen, setConnectDialogOpen] = useState(false)
   const [connectServer, setConnectServer] = useState<DownstreamServer | null>(null)
   const [oauthStatuses, setOauthStatuses] = useState<Record<string, DownstreamOAuthStatusEntry[]>>({})
+  const [statusErrors, setStatusErrors] = useState<Record<string, boolean>>({})
+  const [deleteTarget, setDeleteTarget] = useState<DownstreamServer | null>(null)
+
   // Fetch OAuth status for all HTTP downstreams.
   useEffect(() => {
     if (!data) return
+    let active = true
     for (const ds of data) {
       if (ds.transport === 'http') {
         getDownstreamOAuthStatus(ds.id)
           .then((res) => {
+            if (!active) return
             setOauthStatuses((prev) => ({ ...prev, [ds.id]: res.entries }))
           })
-          .catch(() => {})
+          .catch(() => {
+            if (!active) return
+            setStatusErrors((prev) => ({ ...prev, [ds.id]: true }))
+          })
       }
     }
+    return () => { active = false }
   }, [data])
+
+  function formatRelativeTime(isoDate: string): string {
+    const diff = new Date(isoDate).getTime() - Date.now()
+    if (diff < 0) return 'expired'
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24))
+    if (days > 1) return `${days}d`
+    const hours = Math.floor(diff / (1000 * 60 * 60))
+    if (hours > 0) return `${hours}h`
+    return 'soon'
+  }
 
   function getOAuthBadges(ds: DownstreamServer) {
     if (ds.transport !== 'http') return null
+    if (statusErrors[ds.id]) {
+      return (
+        <Badge variant="outline" className="text-xs text-destructive border-destructive/30">
+          <AlertCircle className="mr-1 h-3 w-3" /> Error
+        </Badge>
+      )
+    }
     const entries = oauthStatuses[ds.id]
     if (!entries || entries.length === 0) {
-      return <Badge variant="outline" className="text-xs text-muted-foreground">Not Connected</Badge>
+      return (
+        <Badge variant="outline" className="text-xs text-muted-foreground cursor-pointer hover:text-primary hover:border-primary"
+          onClick={(e) => { e.stopPropagation(); openConnect(ds) }}>
+          Not Connected
+        </Badge>
+      )
     }
     return (
       <div className="flex flex-col gap-1">
         {entries.map((entry) => {
-          const badge = entry.status === 'authenticated'
-            ? <Badge key={entry.auth_scope_id} className="bg-emerald-500/15 text-emerald-600 text-xs border-0">{entry.auth_scope_name}</Badge>
-            : entry.status === 'expired'
-              ? <Badge key={entry.auth_scope_id} variant="outline" className="text-xs text-amber-600 border-amber-300">{entry.auth_scope_name}</Badge>
-              : <Badge key={entry.auth_scope_id} variant="outline" className="text-xs text-muted-foreground">{entry.auth_scope_name}</Badge>
-          return badge
+          const expiring = entry.expires_at && (new Date(entry.expires_at).getTime() - Date.now()) < 7 * 24 * 60 * 60 * 1000
+          if (entry.status === 'authenticated') {
+            return (
+              <Badge key={entry.auth_scope_id} className={`text-xs border-0 ${expiring ? 'bg-amber-500/15 text-amber-600' : 'bg-emerald-500/15 text-emerald-600'}`}>
+                {entry.auth_scope_name}
+                {entry.expires_at && (
+                  <span className="ml-1 opacity-70">
+                    <Clock className="mr-0.5 inline h-2.5 w-2.5" />
+                    {formatRelativeTime(entry.expires_at)}
+                  </span>
+                )}
+              </Badge>
+            )
+          }
+          if (entry.status === 'expired') {
+            return (
+              <Badge key={entry.auth_scope_id} variant="outline" className="text-xs text-amber-600 border-amber-300">
+                {entry.auth_scope_name} — Expired
+              </Badge>
+            )
+          }
+          return (
+            <Badge key={entry.auth_scope_id} variant="outline" className="text-xs text-muted-foreground">
+              {entry.auth_scope_name}
+            </Badge>
+          )
         })}
       </div>
     )
@@ -165,6 +217,7 @@ export function DownstreamsPage() {
         await createDownstream(form)
       }
       setDialogOpen(false)
+      toast.success(editing ? 'Server updated' : 'Server created')
       refetch()
     } catch (err: unknown) {
       setSaveError(err instanceof Error ? err.message : 'Failed to save downstream server')
@@ -176,10 +229,10 @@ export function DownstreamsPage() {
   async function handleToggleDisabled(ds: DownstreamServer) {
     try {
       await updateDownstream(ds.id, { disabled: !ds.disabled })
+      toast.success(ds.disabled ? 'Server enabled' : 'Server disabled')
       refetch()
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed to toggle server'
-      alert(msg)
+      toast.error(err instanceof Error ? err.message : 'Failed to toggle server')
     }
   }
 
@@ -188,15 +241,25 @@ export function DownstreamsPage() {
     setConnectDialogOpen(true)
   }
 
-  async function handleDelete(id: string) {
+  async function confirmDelete() {
+    if (!deleteTarget) return
     try {
-      await deleteDownstream(id)
+      await deleteDownstream(deleteTarget.id)
+      setDeleteTarget(null)
+      toast.success('Server deleted')
       refetch()
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed to delete downstream server'
-      alert(msg)
+      toast.error(err instanceof Error ? err.message : 'Failed to delete downstream server')
     }
   }
+
+  const sortedData = useMemo(() => {
+    if (!data) return null
+    return [...data].sort((a, b) => {
+      if (a.disabled !== b.disabled) return a.disabled ? 1 : -1
+      return a.name.localeCompare(b.name)
+    })
+  }, [data])
 
   return (
     <div className="space-y-6">
@@ -217,7 +280,7 @@ export function DownstreamsPage() {
             </div>
           )}
           {error && <p className="text-destructive">Error: {error}</p>}
-          {data && (
+          {sortedData && (
             <Table>
               <TableHeader>
                 <TableRow className="border-border/50 hover:bg-transparent">
@@ -231,20 +294,20 @@ export function DownstreamsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {data.length === 0 ? (
+                {sortedData.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={7} className="h-32">
                       <div className="flex flex-col items-center justify-center text-muted-foreground">
                         <Server className="mb-2 h-8 w-8 text-muted-foreground/50" />
                         <p className="text-sm">No downstream servers configured</p>
-                        <p className="text-xs text-muted-foreground/60">
+                        <button onClick={openCreate} className="text-xs text-primary hover:underline">
                           Add a server to start routing tool calls
-                        </p>
+                        </button>
                       </div>
                     </TableCell>
                   </TableRow>
                 ) : (
-                  data.map((ds) => (
+                  sortedData.map((ds) => (
                     <TableRow key={ds.id} className={`border-border/30 hover:bg-muted/30 ${ds.disabled ? 'opacity-50' : ''}`}>
                       <TableCell className="font-medium">{ds.name}</TableCell>
                       <TableCell className="hidden sm:table-cell">
@@ -272,21 +335,6 @@ export function DownstreamsPage() {
                       </TableCell>
                       <TableCell>
                         <div className="flex gap-0.5">
-                          {ds.transport === 'http' && (
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-7 w-7 p-0 text-primary hover:bg-primary/10"
-                                  onClick={() => openConnect(ds)}
-                                >
-                                  <Link className="h-3.5 w-3.5" />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>Connect</TooltipContent>
-                            </Tooltip>
-                          )}
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <Button
@@ -332,13 +380,28 @@ export function DownstreamsPage() {
                                 variant="ghost"
                                 size="sm"
                                 className="h-7 w-7 p-0 hover:bg-destructive/10 hover:text-destructive"
-                                onClick={() => handleDelete(ds.id)}
+                                onClick={() => setDeleteTarget(ds)}
                               >
                                 <Trash2 className="h-3.5 w-3.5" />
                               </Button>
                             </TooltipTrigger>
                             <TooltipContent>Delete</TooltipContent>
                           </Tooltip>
+                          {ds.transport === 'http' && (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 w-7 p-0 text-primary hover:bg-primary/10"
+                                  onClick={() => openConnect(ds)}
+                                >
+                                  <Link className="h-3.5 w-3.5" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>Connect</TooltipContent>
+                            </Tooltip>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -366,6 +429,16 @@ export function DownstreamsPage() {
         onClose={() => setConnectDialogOpen(false)}
         server={connectServer}
         onConnected={refetch}
+      />
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        title="Delete downstream server"
+        description={`Are you sure you want to delete "${deleteTarget?.name}"?`}
+        confirmLabel="Delete"
+        variant="destructive"
+        onConfirm={confirmDelete}
       />
     </div>
   )
@@ -451,6 +524,11 @@ function DownstreamDialog({
                   placeholder="-y, @modelcontextprotocol/server-github"
                 />
               </div>
+              {form.command && (
+                <div className="rounded-md bg-muted/50 border border-border/50 px-3 py-2 font-mono text-xs text-muted-foreground">
+                  <span className="text-primary">$</span> {form.command} {(form.args ?? []).join(' ')}
+                </div>
+              )}
             </>
           ) : (
             <div className="space-y-2">

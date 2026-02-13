@@ -59,13 +59,28 @@ func (h *routeHandler) create(w http.ResponseWriter, r *http.Request) {
 
 func (h *routeHandler) update(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	var rr store.RouteRule
+	ctx := r.Context()
+
+	// Load existing record so partial updates work.
+	existing, err := h.store.GetRouteRule(ctx, id)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "route rule not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to get route rule")
+		return
+	}
+
+	// Decode body on top of existing values.
+	rr := *existing
 	if err := decodeJSON(r, &rr); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
 	rr.ID = id
-	if err := h.svc.UpdateRouteRule(r.Context(), &rr); err != nil {
+
+	if err := h.svc.UpdateRouteRule(ctx, &rr); err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "route rule not found")
 			return

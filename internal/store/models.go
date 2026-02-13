@@ -79,6 +79,7 @@ type DownstreamServer struct {
 // RouteRule represents a routing rule for matching tool calls to downstream servers.
 type RouteRule struct {
 	ID                 string          `json:"id"`
+	Name               string          `json:"name"`
 	Priority           int             `json:"priority"`
 	WorkspaceID        string          `json:"workspace_id"`
 	PathGlob           string          `json:"path_glob"`
@@ -87,6 +88,8 @@ type RouteRule struct {
 	AuthScopeID        string          `json:"auth_scope_id"`
 	Policy             string          `json:"policy"`
 	LogLevel           string          `json:"log_level"`
+	RequiresApproval   bool            `json:"requires_approval"`
+	ApprovalTimeout    int             `json:"approval_timeout"`
 	Source             string          `json:"source"`
 	CreatedAt          time.Time       `json:"created_at"`
 	UpdatedAt          time.Time       `json:"updated_at"`
@@ -124,6 +127,10 @@ type AuditRecord struct {
 	LatencyMs            int             `json:"latency_ms"`
 	ResponseSize         int             `json:"response_size"`
 	CreatedAt            time.Time       `json:"created_at"`
+
+	// Enriched fields for UI
+	RouteRuleSummary     string `json:"route_rule_summary,omitempty"`
+	DownstreamServerName string `json:"downstream_server_name,omitempty"`
 }
 
 // AuditFilter specifies query parameters for listing audit records.
@@ -154,4 +161,26 @@ type AuditStats struct {
 	ErrorCount    int     `json:"error_count"`
 	AvgLatencyMs  float64 `json:"avg_latency_ms"`
 	P95LatencyMs  int     `json:"p95_latency_ms"`
+}
+
+// ToolApproval represents a pending or resolved tool call approval request.
+type ToolApproval struct {
+	ID                 string     `json:"id"`
+	Status             string     `json:"status"` // pending, approved, denied, timeout, cancelled
+	RequestSessionID   string     `json:"request_session_id"`
+	RequestClientType  string     `json:"request_client_type"`
+	RequestModel       string     `json:"request_model"`
+	WorkspaceID        string     `json:"workspace_id"`
+	ToolName           string     `json:"tool_name"`
+	Arguments          string     `json:"arguments"`
+	Justification      string     `json:"justification"`
+	RouteRuleID        string     `json:"route_rule_id"`
+	DownstreamServerID string     `json:"downstream_server_id"`
+	AuthScopeID        string     `json:"auth_scope_id"`
+	ApproverSessionID  string     `json:"approver_session_id"`
+	ApproverType       string     `json:"approver_type"` // mcp_agent, dashboard, system
+	Resolution         string     `json:"resolution"`
+	TimeoutSec         int        `json:"timeout_sec"`
+	CreatedAt          time.Time  `json:"created_at"`
+	ResolvedAt         *time.Time `json:"resolved_at,omitempty"`
 }

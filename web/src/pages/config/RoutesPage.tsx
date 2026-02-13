@@ -37,10 +37,13 @@ import {
   updateRoute,
 } from '@/api/client'
 import type { RouteRule } from '@/api/types'
-import { ChevronDown, ChevronRight, GitBranch, Pencil, Plus, Trash2 } from 'lucide-react'
+import { ChevronDown, ChevronRight, GitBranch, Pencil, Plus, ShieldCheck, Trash2, X } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { toast } from 'sonner'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 
 interface FormData {
+  name: string
   priority: number
   workspace_id: string
   path_glob: string
@@ -49,9 +52,12 @@ interface FormData {
   auth_scope_id: string
   policy: 'allow' | 'deny'
   log_level: string
+  requires_approval: boolean
+  approval_timeout: number
 }
 
 const emptyForm: FormData = {
+  name: '',
   priority: 100,
   workspace_id: '',
   path_glob: '**',
@@ -60,6 +66,8 @@ const emptyForm: FormData = {
   auth_scope_id: '',
   policy: 'allow',
   log_level: 'info',
+  requires_approval: false,
+  approval_timeout: 300,
 }
 
 export function RoutesPage() {
@@ -80,6 +88,7 @@ export function RoutesPage() {
   const [form, setForm] = useState<FormData>(emptyForm)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<RouteRule | null>(null)
 
   function openCreate() {
     setEditing(null)
@@ -92,6 +101,7 @@ export function RoutesPage() {
     setEditing(r)
     const tm = Array.isArray(r.tool_match) ? r.tool_match as string[] : []
     setForm({
+      name: r.name || '',
       priority: r.priority,
       workspace_id: r.workspace_id,
       path_glob: r.path_glob || '**',
@@ -100,6 +110,8 @@ export function RoutesPage() {
       auth_scope_id: r.auth_scope_id,
       policy: r.policy,
       log_level: r.log_level,
+      requires_approval: r.requires_approval ?? false,
+      approval_timeout: r.approval_timeout ?? 300,
     })
     setSaveError(null)
     setDialogOpen(true)
@@ -115,6 +127,7 @@ export function RoutesPage() {
         await createRoute(form)
       }
       setDialogOpen(false)
+      toast.success(editing ? 'Route updated' : 'Route created')
       refetch()
     } catch (err: unknown) {
       setSaveError(err instanceof Error ? err.message : 'Failed to save route rule')
@@ -123,13 +136,15 @@ export function RoutesPage() {
     }
   }
 
-  async function handleDelete(id: string) {
+  async function confirmDelete() {
+    if (!deleteTarget) return
     try {
-      await deleteRoute(id)
+      await deleteRoute(deleteTarget.id)
+      setDeleteTarget(null)
+      toast.success('Route deleted')
       refetch()
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed to delete route rule'
-      alert(msg)
+      toast.error(err instanceof Error ? err.message : 'Failed to delete route rule')
     }
   }
 
@@ -161,10 +176,12 @@ export function RoutesPage() {
               <TableHeader>
                 <TableRow className="border-border/50 hover:bg-transparent">
                   <TableHead className="hidden sm:table-cell">Priority</TableHead>
+                  <TableHead>Name</TableHead>
                   <TableHead>Workspace</TableHead>
                   <TableHead className="hidden md:table-cell">Path Glob</TableHead>
                   <TableHead className="hidden lg:table-cell">Downstream</TableHead>
                   <TableHead className="hidden lg:table-cell">Auth Scope</TableHead>
+                  <TableHead className="hidden lg:table-cell">Approval</TableHead>
                   <TableHead>Policy</TableHead>
                   <TableHead className="w-24">Actions</TableHead>
                 </TableRow>
@@ -172,13 +189,13 @@ export function RoutesPage() {
               <TableBody>
                 {data.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="h-32">
+                    <TableCell colSpan={9} className="h-32">
                       <div className="flex flex-col items-center justify-center text-muted-foreground">
                         <GitBranch className="mb-2 h-8 w-8 text-muted-foreground/50" />
                         <p className="text-sm">No route rules configured</p>
-                        <p className="text-xs text-muted-foreground/60">
+                        <button onClick={openCreate} className="text-xs text-primary hover:underline">
                           Add routing rules to control tool call dispatch
-                        </p>
+                        </button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -187,6 +204,9 @@ export function RoutesPage() {
                     <TableRow key={r.id} className="border-border/30 hover:bg-muted/30">
                       <TableCell className="hidden sm:table-cell font-mono text-sm text-muted-foreground">
                         {r.priority}
+                      </TableCell>
+                      <TableCell className="text-sm">
+                        {r.name || <span className="text-muted-foreground/40">—</span>}
                       </TableCell>
                       <TableCell>{wsName(r.workspace_id)}</TableCell>
                       <TableCell className="hidden md:table-cell">
@@ -201,6 +221,16 @@ export function RoutesPage() {
                         <div className="max-w-[10rem] truncate">
                           {r.auth_scope_id ? asName(r.auth_scope_id) : '-'}
                         </div>
+                      </TableCell>
+                      <TableCell className="hidden lg:table-cell">
+                        {r.requires_approval ? (
+                          <Badge variant="outline" className="gap-1 text-amber-400 border-amber-500/30">
+                            <ShieldCheck className="h-3 w-3" />
+                            required
+                          </Badge>
+                        ) : (
+                          <span className="text-muted-foreground/40">-</span>
+                        )}
                       </TableCell>
                       <TableCell>
                         <Badge variant={r.policy === 'allow' ? 'secondary' : 'destructive'}>
@@ -228,7 +258,7 @@ export function RoutesPage() {
                                 variant="ghost"
                                 size="sm"
                                 className="h-8 w-8 p-0 hover:bg-destructive/10 hover:text-destructive"
-                                onClick={() => handleDelete(r.id)}
+                                onClick={() => setDeleteTarget(r)}
                               >
                                 <Trash2 className="h-3.5 w-3.5" />
                               </Button>
@@ -258,6 +288,16 @@ export function RoutesPage() {
         downstreams={downstreams ?? []}
         authScopes={authScopes ?? []}
         saveError={saveError}
+      />
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        title="Delete route rule"
+        description={`Are you sure you want to delete this route rule?`}
+        confirmLabel="Delete"
+        variant="destructive"
+        onConfirm={confirmDelete}
       />
     </div>
   )
@@ -289,14 +329,13 @@ function RouteDialog({
   authScopes: { id: string; name: string }[]
 }) {
   const [showAdvanced, setShowAdvanced] = useState(false)
-  const [toolMatchStr, setToolMatchStr] = useState('')
+  const [chipInput, setChipInput] = useState('')
   const [prevForm, setPrevForm] = useState(form)
 
-  // Sync toolMatchStr when form changes (e.g. opening edit dialog).
+  // Sync state when form changes (e.g. opening edit dialog).
   if (form !== prevForm) {
     setPrevForm(form)
-    const val = form.tool_match.length > 0 ? JSON.stringify(form.tool_match) : ''
-    setToolMatchStr(val)
+    setChipInput('')
     // Show advanced section when editing a rule with non-default values.
     if (form.path_glob !== '**' || form.tool_match.length > 0) {
       setShowAdvanced(true)
@@ -305,6 +344,17 @@ function RouteDialog({
 
   const hasNonDefaultAdvanced = form.path_glob !== '**' || form.tool_match.length > 0
 
+  function addChip() {
+    const val = chipInput.trim()
+    if (!val) return
+    setForm((f) => ({ ...f, tool_match: [...f.tool_match, val] }))
+    setChipInput('')
+  }
+
+  function removeChip(index: number) {
+    setForm((f) => ({ ...f, tool_match: f.tool_match.filter((_, i) => i !== index) }))
+  }
+
   return (
     <Dialog open={open} onOpenChange={() => onClose()}>
       <DialogContent>
@@ -312,6 +362,15 @@ function RouteDialog({
           <DialogTitle>{editing ? 'Edit Route' : 'Add Route'}</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
+          <div className="space-y-2">
+            <Label className="text-xs text-muted-foreground">Name (optional)</Label>
+            <Input
+              value={form.name}
+              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+              placeholder="e.g. GitHub allow-all"
+            />
+          </div>
+
           <div className="space-y-2">
             <Label className="text-xs text-muted-foreground">Workspace</Label>
             <Select
@@ -332,15 +391,18 @@ function RouteDialog({
           </div>
 
           <div className="space-y-2">
-            <Label className="text-xs text-muted-foreground">Downstream Server</Label>
+            <Label className={`text-xs text-muted-foreground ${form.policy === 'deny' ? 'opacity-50' : ''}`}>
+              Downstream Server
+            </Label>
             <Select
               value={form.downstream_server_id}
               onValueChange={(v) =>
                 setForm((f) => ({ ...f, downstream_server_id: v }))
               }
+              disabled={form.policy === 'deny'}
             >
               <SelectTrigger>
-                <SelectValue placeholder="Select server..." />
+                <SelectValue placeholder={form.policy === 'deny' ? 'N/A for deny rules' : 'Select server...'} />
               </SelectTrigger>
               <SelectContent>
                 {downstreams.map((d) => (
@@ -353,15 +415,18 @@ function RouteDialog({
           </div>
 
           <div className="space-y-2">
-            <Label className="text-xs text-muted-foreground">Auth Scope</Label>
+            <Label className={`text-xs text-muted-foreground ${form.policy === 'deny' ? 'opacity-50' : ''}`}>
+              Auth Scope
+            </Label>
             <Select
               value={form.auth_scope_id || 'none'}
               onValueChange={(v) =>
                 setForm((f) => ({ ...f, auth_scope_id: v === 'none' ? '' : v }))
               }
+              disabled={form.policy === 'deny'}
             >
               <SelectTrigger>
-                <SelectValue placeholder="None" />
+                <SelectValue placeholder={form.policy === 'deny' ? 'N/A for deny rules' : 'None'} />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">None</SelectItem>
@@ -379,9 +444,19 @@ function RouteDialog({
               <Label className="text-xs text-muted-foreground">Policy</Label>
               <Select
                 value={form.policy}
-                onValueChange={(v) =>
-                  setForm((f) => ({ ...f, policy: v as 'allow' | 'deny' }))
-                }
+                onValueChange={(v) => {
+                  const policy = v as 'allow' | 'deny'
+                  if (policy === 'deny') {
+                    setForm((f) => ({
+                      ...f,
+                      policy,
+                      downstream_server_id: '',
+                      auth_scope_id: '',
+                    }))
+                  } else {
+                    setForm((f) => ({ ...f, policy }))
+                  }
+                }}
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -403,6 +478,39 @@ function RouteDialog({
               />
             </div>
           </div>
+
+          {form.policy === 'allow' && (
+            <div className="space-y-3 rounded-md border border-border/50 p-3">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={form.requires_approval}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, requires_approval: e.target.checked }))
+                  }
+                  className="h-4 w-4 rounded border-border accent-primary"
+                />
+                <span className="text-sm">Requires approval</span>
+              </label>
+              {form.requires_approval && (
+                <div className="space-y-2 pl-6">
+                  <Label className="text-xs text-muted-foreground">Timeout (seconds)</Label>
+                  <Input
+                    type="number"
+                    min={10}
+                    value={form.approval_timeout}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, approval_timeout: Number(e.target.value) }))
+                    }
+                    className="w-32"
+                  />
+                  <p className="text-xs text-muted-foreground/60">
+                    How long to wait for approval before auto-denying.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
 
           <button
             type="button"
@@ -439,32 +547,38 @@ function RouteDialog({
 
               <div className="space-y-2">
                 <Label className="text-xs text-muted-foreground">Tool Match</Label>
+                <div className="flex flex-wrap gap-1 mb-2">
+                  {form.tool_match.map((pattern, i) => (
+                    <Badge
+                      key={i}
+                      variant="outline"
+                      className="gap-1 font-mono text-xs"
+                    >
+                      {pattern}
+                      <button
+                        type="button"
+                        className="ml-0.5 hover:text-destructive"
+                        onClick={() => removeChip(i)}
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </Badge>
+                  ))}
+                </div>
                 <Input
-                  value={toolMatchStr}
-                  onChange={(e) => {
-                    setToolMatchStr(e.target.value)
-                    if (e.target.value.trim() === '') {
-                      setForm((f) => ({ ...f, tool_match: [] }))
-                      return
-                    }
-                    try {
-                      const parsed: unknown = JSON.parse(e.target.value)
-                      if (
-                        Array.isArray(parsed) &&
-                        parsed.every((v) => typeof v === 'string')
-                      ) {
-                        setForm((f) => ({ ...f, tool_match: parsed as string[] }))
-                      }
-                    } catch {
-                      // Wait for valid JSON
+                  value={chipInput}
+                  onChange={(e) => setChipInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      addChip()
                     }
                   }}
                   className="font-mono text-sm"
-                  placeholder='["github__*", "slack__*"]'
+                  placeholder="github__* (press Enter to add)"
                 />
                 <p className="text-xs text-muted-foreground/60">
-                  JSON array of tool globs. Leave empty to match all tools.
-                  Example: <code className="font-mono">["github__*", "slack__post_message"]</code>
+                  Tool glob patterns. Leave empty to match all tools.
                 </p>
               </div>
             </div>

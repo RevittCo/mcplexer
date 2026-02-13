@@ -131,6 +131,13 @@ func (m *mockStore) GetDashboardTimeSeries(_ context.Context, _, _ time.Time) ([
 	return nil, nil
 }
 
+// Stubs — ToolApprovalStore.
+func (m *mockStore) CreateToolApproval(_ context.Context, _ *store.ToolApproval) error   { return nil }
+func (m *mockStore) GetToolApproval(_ context.Context, _ string) (*store.ToolApproval, error) { return nil, nil }
+func (m *mockStore) ListPendingApprovals(_ context.Context) ([]store.ToolApproval, error) { return nil, nil }
+func (m *mockStore) ResolveToolApproval(_ context.Context, _, _, _, _, _ string) error    { return nil }
+func (m *mockStore) ExpirePendingApprovals(_ context.Context, _ time.Time) (int, error)   { return 0, nil }
+
 // Stubs — Store top-level.
 func (m *mockStore) Tx(_ context.Context, _ func(store.Store) error) error { return nil }
 func (m *mockStore) Ping(_ context.Context) error                         { return nil }
@@ -159,7 +166,7 @@ func newTestHandler(lister ToolLister, servers []store.DownstreamServer) (*handl
 		},
 	}
 	engine := routing.NewEngine(ms)
-	h := newHandler(ms, engine, lister, nil, TransportSocket)
+	h := newHandler(ms, engine, lister, nil, TransportSocket, nil)
 	// Bind session to the global workspace so tool filtering passes.
 	h.sessions.clientPath = "/test"
 	h.sessions.wsChain = []routing.WorkspaceAncestor{{ID: "ws-global", RootPath: "/"}}

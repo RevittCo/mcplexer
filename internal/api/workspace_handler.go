@@ -58,13 +58,27 @@ func (h *workspaceHandler) create(w http.ResponseWriter, r *http.Request) {
 
 func (h *workspaceHandler) update(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	var ws store.Workspace
+	ctx := r.Context()
+
+	// Load existing record so partial updates preserve fields like created_at.
+	existing, err := h.store.GetWorkspace(ctx, id)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "workspace not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to get workspace")
+		return
+	}
+
+	// Decode body on top of existing values.
+	ws := *existing
 	if err := decodeJSON(r, &ws); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
 	ws.ID = id
-	if err := h.svc.UpdateWorkspace(r.Context(), &ws); err != nil {
+	if err := h.svc.UpdateWorkspace(ctx, &ws); err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "workspace not found")
 			return

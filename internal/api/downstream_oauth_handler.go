@@ -32,6 +32,8 @@ type oauthStatusEntry struct {
 	AuthScopeName string     `json:"auth_scope_name"`
 	Status        string     `json:"status"`
 	ExpiresAt     *time.Time `json:"expires_at,omitempty"`
+	WorkspaceID   string     `json:"workspace_id,omitempty"`
+	RouteRuleID   string     `json:"route_rule_id,omitempty"`
 }
 
 type oauthStatusResponse struct {
@@ -267,6 +269,8 @@ func (h *downstreamOAuthHandler) status(w http.ResponseWriter, r *http.Request) 
 			AuthScopeID:   scope.ID,
 			AuthScopeName: scope.Name,
 			Status:        "not_configured",
+			WorkspaceID:   rule.WorkspaceID,
+			RouteRuleID:   rule.ID,
 		}
 
 		if h.flowManager != nil {

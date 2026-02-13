@@ -17,10 +17,12 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
-import { ExternalLink } from 'lucide-react'
+import { AlertCircle, ExternalLink, Loader2, RotateCcw, Zap } from 'lucide-react'
 import { useApi } from '@/hooks/use-api'
-import { connectDownstream, listOAuthTemplates, listWorkspaces } from '@/api/client'
-import type { DownstreamServer, OAuthTemplate } from '@/api/types'
+import { connectDownstream, getOAuthCapabilities, listWorkspaces } from '@/api/client'
+import type { DownstreamServer, OAuthCapabilities } from '@/api/types'
+import { toast } from 'sonner'
+import { CopyButton } from '@/components/ui/copy-button'
 
 interface ConnectDialogProps {
   open: boolean
@@ -30,27 +32,41 @@ interface ConnectDialogProps {
 }
 
 export function ConnectDialog({ open, onClose, server, onConnected }: ConnectDialogProps) {
-  const templatesFetcher = useCallback(() => listOAuthTemplates(), [])
-  const { data: templates } = useApi(templatesFetcher)
-
   const workspacesFetcher = useCallback(() => listWorkspaces(), [])
   const { data: workspaces } = useApi(workspacesFetcher)
 
+  const [caps, setCaps] = useState<OAuthCapabilities | null>(null)
+  const [capsLoading, setCapsLoading] = useState(false)
+  const [capsError, setCapsError] = useState<string | null>(null)
   const [clientId, setClientId] = useState('')
   const [clientSecret, setClientSecret] = useState('')
+  const [accountLabel, setAccountLabel] = useState('')
   const [workspaceId, setWorkspaceId] = useState('global')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Find matching template for this server.
-  const template: OAuthTemplate | null =
-    templates?.find((t) => t.id === server?.id) ?? null
+  function fetchCapabilities() {
+    if (!server) return
+    setCapsLoading(true)
+    setCaps(null)
+    setCapsError(null)
+    getOAuthCapabilities(server.id)
+      .then(setCaps)
+      .catch(() => setCapsError('Failed to check server capabilities. The server may be offline.'))
+      .finally(() => setCapsLoading(false))
+  }
+
+  // Fetch capabilities when dialog opens.
+  useEffect(() => {
+    if (open && server) fetchCapabilities()
+  }, [open, server?.id])
 
   // Reset form when dialog opens with a new server.
   useEffect(() => {
     if (open) {
       setClientId('')
       setClientSecret('')
+      setAccountLabel('')
       setWorkspaceId('global')
       setSaving(false)
       setError(null)
@@ -66,7 +82,9 @@ export function ConnectDialog({ open, onClose, server, onConnected }: ConnectDia
         workspace_id: workspaceId,
         client_id: clientId || undefined,
         client_secret: clientSecret || undefined,
+        account_label: accountLabel || undefined,
       })
+      toast.success(`${server.name} connected`)
       onConnected()
       onClose()
       if (resp.authorize_url) {
@@ -81,6 +99,9 @@ export function ConnectDialog({ open, onClose, server, onConnected }: ConnectDia
 
   if (!server) return null
 
+  const isAutoDiscovery = caps?.supports_auto_discovery && !caps.needs_credentials
+  const template = caps?.template ?? null
+
   return (
     <Dialog open={open} onOpenChange={() => onClose()}>
       <DialogContent className="max-w-lg">
@@ -88,7 +109,36 @@ export function ConnectDialog({ open, onClose, server, onConnected }: ConnectDia
           <DialogTitle>Connect {server.name}</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
-          {template ? (
+          {capsLoading && (
+            <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Checking server capabilities...
+            </div>
+          )}
+
+          {!capsLoading && capsError && (
+            <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+              <div className="flex-1 text-sm text-destructive">{capsError}</div>
+              <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={fetchCapabilities}>
+                <RotateCcw className="mr-1 h-3 w-3" /> Retry
+              </Button>
+            </div>
+          )}
+
+          {!capsLoading && !capsError && isAutoDiscovery && (
+            <div className="rounded-md border border-border p-3 space-y-2">
+              <div className="flex items-center gap-2">
+                <Zap className="h-4 w-4 text-emerald-600" />
+                <span className="text-sm font-medium">Automatic Setup</span>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                This integration connects automatically. Click Connect and authenticate.
+              </p>
+            </div>
+          )}
+
+          {!capsLoading && !capsError && !isAutoDiscovery && template && (
             <TemplateForm
               template={template}
               clientId={clientId}
@@ -96,7 +146,9 @@ export function ConnectDialog({ open, onClose, server, onConnected }: ConnectDia
               clientSecret={clientSecret}
               setClientSecret={setClientSecret}
             />
-          ) : (
+          )}
+
+          {!capsLoading && !capsError && !isAutoDiscovery && !template && (
             <div className="rounded-md border border-border p-3 space-y-2">
               <p className="text-sm text-muted-foreground">
                 This server supports automatic OAuth setup via MCP discovery.
@@ -104,6 +156,18 @@ export function ConnectDialog({ open, onClose, server, onConnected }: ConnectDia
               </p>
             </div>
           )}
+
+          <div className="space-y-2">
+            <Label className="text-xs text-muted-foreground">Account Label (optional)</Label>
+            <Input
+              value={accountLabel}
+              onChange={(e) => setAccountLabel(e.target.value)}
+              placeholder="e.g., Personal, Work, Client X"
+            />
+            <p className="text-xs text-muted-foreground/60">
+              Label this account to connect multiple accounts for the same service.
+            </p>
+          </div>
 
           <div className="space-y-2">
             <Label className="text-xs text-muted-foreground">Workspace</Label>
@@ -122,7 +186,15 @@ export function ConnectDialog({ open, onClose, server, onConnected }: ConnectDia
           </div>
         </div>
 
-        {error && <p className="text-sm text-destructive">{error}</p>}
+        {error && (
+          <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+            <div className="flex-1 text-sm text-destructive">{error}</div>
+            <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={handleSubmit}>
+              <RotateCcw className="mr-1 h-3 w-3" /> Retry
+            </Button>
+          </div>
+        )}
 
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
@@ -130,7 +202,7 @@ export function ConnectDialog({ open, onClose, server, onConnected }: ConnectDia
           </Button>
           <Button
             onClick={handleSubmit}
-            disabled={saving || (template !== null && !clientId)}
+            disabled={saving || capsLoading || !!capsError || (caps?.needs_credentials === true && !clientId)}
           >
             {saving ? 'Connecting...' : 'Connect'}
           </Button>
@@ -147,7 +219,7 @@ function TemplateForm({
   clientSecret,
   setClientSecret,
 }: {
-  template: OAuthTemplate
+  template: NonNullable<OAuthCapabilities['template']>
   clientId: string
   setClientId: (v: string) => void
   clientSecret: string
@@ -174,12 +246,12 @@ function TemplateForm({
           <Label className="text-xs text-muted-foreground">
             Callback URL (copy this)
           </Label>
-          <Input
-            readOnly
-            value={template.callback_url}
-            className="font-mono text-xs"
-            onClick={(e) => (e.target as HTMLInputElement).select()}
-          />
+          <div className="flex items-center gap-2">
+            <code className="flex-1 truncate rounded-md border border-border bg-muted/50 px-2 py-1.5 font-mono text-xs">
+              {template.callback_url}
+            </code>
+            <CopyButton value={template.callback_url} />
+          </div>
         </div>
       )}
 

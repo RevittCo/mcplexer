@@ -58,12 +58,18 @@ func (d *DB) QueryAuditRecords(
 	if limit <= 0 {
 		limit = 50
 	}
-	dataQ := `SELECT id, timestamp, session_id, client_type, model, workspace_id,
-		subpath, tool_name, params_redacted, route_rule_id,
-		downstream_server_id, downstream_instance_id, auth_scope_id,
-		status, error_code, error_message, latency_ms, response_size, created_at
-		FROM audit_records` + where +
-		` ORDER BY timestamp DESC LIMIT ? OFFSET ?`
+	dataQ := `SELECT
+		r.id, r.timestamp, r.session_id, r.client_type, r.model, r.workspace_id,
+		r.subpath, r.tool_name, r.params_redacted, r.route_rule_id,
+		r.downstream_server_id, r.downstream_instance_id, r.auth_scope_id,
+		r.status, r.error_code, r.error_message, r.latency_ms, r.response_size, r.created_at,
+		COALESCE(rr.path_glob, '') as route_rule_summary,
+		COALESCE(ds.name, '') as downstream_server_name
+		FROM audit_records r
+		LEFT JOIN route_rules rr ON r.route_rule_id = rr.id
+		LEFT JOIN downstream_servers ds ON r.downstream_server_id = ds.id ` +
+		strings.ReplaceAll(where, "workspace_id", "r.workspace_id") + // Qualify ambiguous columns if needed
+		` ORDER BY r.timestamp DESC LIMIT ? OFFSET ?`
 	dataArgs := append(args, limit, f.Offset)
 
 	rows, err := d.q.QueryContext(ctx, dataQ, dataArgs...)
@@ -206,6 +212,7 @@ func scanAuditRow(row rowScanner) (*store.AuditRecord, error) {
 		&r.RouteRuleID, &r.DownstreamServerID, &r.DownstreamInstanceID,
 		&r.AuthScopeID, &r.Status, &r.ErrorCode, &r.ErrorMessage,
 		&r.LatencyMs, &r.ResponseSize, &createdAt,
+		&r.RouteRuleSummary, &r.DownstreamServerName,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("scan audit row: %w", err)

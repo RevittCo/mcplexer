@@ -43,9 +43,17 @@ export interface OAuthTemplate {
   scopes: string[]
   use_pkce: boolean
   needs_secret: boolean
+  supports_auto_discovery: boolean
   setup_url: string
   help_text: string
   callback_url: string
+}
+
+export interface OAuthCapabilities {
+  has_template: boolean
+  template: OAuthTemplate | null
+  supports_auto_discovery: boolean
+  needs_credentials: boolean
 }
 
 export interface OAuthQuickSetupRequest {
@@ -72,6 +80,7 @@ export interface ConnectDownstreamRequest {
   client_id?: string
   client_secret?: string
   scope_name?: string
+  account_label?: string
 }
 
 export interface ConnectDownstreamResponse {
@@ -92,6 +101,8 @@ export interface DownstreamOAuthStatusEntry {
   auth_scope_name: string
   status: 'authenticated' | 'expired' | 'not_configured'
   expires_at: string | null
+  workspace_id?: string
+  route_rule_id?: string
 }
 
 export interface DownstreamOAuthStatusResponse {
@@ -117,6 +128,7 @@ export interface DownstreamServer {
 
 export interface RouteRule {
   id: string
+  name: string
   priority: number
   workspace_id: string
   path_glob: string
@@ -125,6 +137,8 @@ export interface RouteRule {
   auth_scope_id: string
   policy: 'allow' | 'deny'
   log_level: string
+  requires_approval: boolean
+  approval_timeout: number
   created_at: string
   updated_at: string
 }
@@ -148,6 +162,8 @@ export interface AuditRecord {
   error_message: string
   latency_ms: number
   response_size: number
+  route_rule_summary?: string
+  downstream_server_name?: string
 }
 
 export interface AuditFilter {
@@ -219,6 +235,32 @@ export interface DryRunResult {
 export interface PaginatedResponse<T> {
   data: T[]
   total: number
+}
+
+export interface ToolApproval {
+  id: string
+  status: 'pending' | 'approved' | 'denied' | 'timeout' | 'cancelled'
+  request_session_id: string
+  request_client_type: string
+  request_model: string
+  workspace_id: string
+  tool_name: string
+  arguments: string
+  justification: string
+  route_rule_id: string
+  downstream_server_id: string
+  auth_scope_id: string
+  approver_session_id: string
+  approver_type: string
+  resolution: string
+  timeout_sec: number
+  created_at: string
+  resolved_at: string | null
+}
+
+export interface ApprovalEvent {
+  type: 'pending' | 'resolved'
+  approval: ToolApproval
 }
 
 export interface ApiError {

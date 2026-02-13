@@ -28,15 +28,31 @@ type RouteResult struct {
 	AuthScopeID        string
 	MatchedRuleID      string
 	OriginalToolName   string
+	RequiresApproval   bool
+	ApprovalTimeout    int
 }
 
 var (
 	// ErrNoRoute means no matching route rule was found.
 	ErrNoRoute = errors.New("no matching route")
 
-	// ErrDenied means a deny rule matched.
+	// ErrDenied means a deny rule matched. Use errors.Is(err, ErrDenied)
+	// to check; DeniedError wraps this sentinel to carry rule details.
 	ErrDenied = errors.New("route denied by policy")
 )
+
+// DeniedError wraps ErrDenied with the ID of the rule that denied the request.
+type DeniedError struct {
+	RuleID string
+}
+
+func (e *DeniedError) Error() string {
+	return "route denied by policy: rule " + e.RuleID
+}
+
+func (e *DeniedError) Unwrap() error {
+	return ErrDenied
+}
 
 // Engine resolves tool calls to downstream servers via route rules.
 type Engine struct {
@@ -106,8 +122,8 @@ func (e *Engine) RouteWithFallback(ctx context.Context, rc RouteContext, clientR
 		if err == nil {
 			return result, nil
 		}
-		if err == ErrDenied {
-			return nil, ErrDenied
+		if errors.Is(err, ErrDenied) {
+			return nil, err
 		}
 		// ErrNoRoute: continue to next ancestor.
 	}
@@ -163,7 +179,7 @@ func matchRoute(rules []parsedRule, rc RouteContext) (*RouteResult, error) {
 		}
 
 		if r.Policy == "deny" {
-			return nil, ErrDenied
+			return nil, &DeniedError{RuleID: r.ID}
 		}
 
 		return &RouteResult{
@@ -171,6 +187,8 @@ func matchRoute(rules []parsedRule, rc RouteContext) (*RouteResult, error) {
 			AuthScopeID:        r.AuthScopeID,
 			MatchedRuleID:      r.ID,
 			OriginalToolName:   rc.ToolName,
+			RequiresApproval:   r.RequiresApproval,
+			ApprovalTimeout:    r.ApprovalTimeout,
 		}, nil
 	}
 

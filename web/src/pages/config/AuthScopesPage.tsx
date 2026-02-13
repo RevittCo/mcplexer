@@ -34,14 +34,15 @@ import {
   getOAuthStatus,
   listAuthScopes,
   listOAuthProviders,
-  listOAuthTemplates,
-  oauthQuickSetup,
   revokeOAuthToken,
   updateAuthScope,
 } from '@/api/client'
-import type { AuthScope, OAuthStatus, OAuthTemplate } from '@/api/types'
+import type { AuthScope, OAuthStatus } from '@/api/types'
 import { Copy, ExternalLink, Lock, Pencil, Plus, Trash2, Unplug } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { toast } from 'sonner'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 
 interface FormData {
   name: string
@@ -64,14 +65,12 @@ export function AuthScopesPage() {
   const providersFetcher = useCallback(() => listOAuthProviders(), [])
   const { data: providers } = useApi(providersFetcher)
 
-  const templatesFetcher = useCallback(() => listOAuthTemplates(), [])
-  const { data: templates } = useApi(templatesFetcher)
-
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<AuthScope | null>(null)
   const [form, setForm] = useState<FormData>(emptyForm)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<AuthScope | null>(null)
 
   function openCreate() {
     setEditing(null)
@@ -102,21 +101,24 @@ export function AuthScopesPage() {
         await createAuthScope(form)
       }
       setDialogOpen(false)
+      toast.success(editing ? 'Credential updated' : 'Credential created')
       refetch()
     } catch (err: unknown) {
-      setSaveError(err instanceof Error ? err.message : 'Failed to save auth scope')
+      setSaveError(err instanceof Error ? err.message : 'Failed to save credential')
     } finally {
       setSaving(false)
     }
   }
 
-  async function handleDelete(id: string) {
+  async function confirmDelete() {
+    if (!deleteTarget) return
     try {
-      await deleteAuthScope(id)
+      await deleteAuthScope(deleteTarget.id)
+      setDeleteTarget(null)
+      toast.success('Credential deleted')
       refetch()
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed to delete auth scope'
-      alert(msg)
+      toast.error(err instanceof Error ? err.message : 'Failed to delete credential')
     }
   }
 
@@ -136,28 +138,27 @@ export function AuthScopesPage() {
       const { authorize_url } = await getOAuthAuthorizeURL(scopeId)
       window.location.href = authorize_url
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed to start authentication'
-      alert(msg)
+      toast.error(err instanceof Error ? err.message : 'Failed to start authentication')
     }
   }
 
   async function handleRevoke(scopeId: string) {
     try {
       await revokeOAuthToken(scopeId)
+      toast.success('Token revoked')
       refetch()
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed to revoke token'
-      alert(msg)
+      toast.error(err instanceof Error ? err.message : 'Failed to revoke token')
     }
   }
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Auth Scopes</h1>
+        <h1 className="text-2xl font-bold">Credentials</h1>
         <Button onClick={openCreate}>
           <Plus className="mr-2 h-4 w-4" />
-          Add Auth Scope
+          Add Credential
         </Button>
       </div>
 
@@ -187,10 +188,10 @@ export function AuthScopesPage() {
                     <TableCell colSpan={5} className="h-32">
                       <div className="flex flex-col items-center justify-center text-muted-foreground">
                         <Lock className="mb-2 h-8 w-8 text-muted-foreground/50" />
-                        <p className="text-sm">No auth scopes configured</p>
-                        <p className="text-xs text-muted-foreground/60">
-                          Add an auth scope for credential injection
-                        </p>
+                        <p className="text-sm">No credentials configured</p>
+                        <button onClick={openCreate} className="text-xs text-primary hover:underline">
+                          Add a credential to get started
+                        </button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -229,36 +230,6 @@ export function AuthScopesPage() {
                       </TableCell>
                       <TableCell>
                         <div className="flex gap-0.5">
-                          {scope.type === 'oauth2' && (
-                            <>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="h-7 w-7 p-0"
-                                    onClick={() => handleAuthenticate(scope.id)}
-                                  >
-                                    <ExternalLink className="h-3.5 w-3.5" />
-                                  </Button>
-                                </TooltipTrigger>
-                                <TooltipContent>Authenticate</TooltipContent>
-                              </Tooltip>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="h-7 w-7 p-0 hover:bg-amber-500/10 hover:text-amber-600"
-                                    onClick={() => handleRevoke(scope.id)}
-                                  >
-                                    <Unplug className="h-3.5 w-3.5" />
-                                  </Button>
-                                </TooltipTrigger>
-                                <TooltipContent>Revoke Token</TooltipContent>
-                              </Tooltip>
-                            </>
-                          )}
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <Button
@@ -291,13 +262,43 @@ export function AuthScopesPage() {
                                 variant="ghost"
                                 size="sm"
                                 className="h-7 w-7 p-0 hover:bg-destructive/10 hover:text-destructive"
-                                onClick={() => handleDelete(scope.id)}
+                                onClick={() => setDeleteTarget(scope)}
                               >
                                 <Trash2 className="h-3.5 w-3.5" />
                               </Button>
                             </TooltipTrigger>
                             <TooltipContent>Delete</TooltipContent>
                           </Tooltip>
+                          {scope.type === 'oauth2' && (
+                            <>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-7 w-7 p-0 text-primary hover:bg-primary/10"
+                                    onClick={() => handleAuthenticate(scope.id)}
+                                  >
+                                    <ExternalLink className="h-3.5 w-3.5" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>Authenticate</TooltipContent>
+                              </Tooltip>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-7 w-7 p-0 hover:bg-amber-500/10 hover:text-amber-600"
+                                    onClick={() => handleRevoke(scope.id)}
+                                  >
+                                    <Unplug className="h-3.5 w-3.5" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>Revoke Token</TooltipContent>
+                              </Tooltip>
+                            </>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -318,32 +319,29 @@ export function AuthScopesPage() {
         saving={saving}
         editing={!!editing}
         providers={providers ?? []}
-        templates={templates ?? []}
         saveError={saveError}
-        onQuickSetup={async (name, templateId, clientId, clientSecret) => {
-          setSaving(true)
-          setSaveError(null)
-          try {
-            const resp = await oauthQuickSetup({
-              name,
-              template_id: templateId,
-              client_id: clientId,
-              client_secret: clientSecret,
-            })
-            setDialogOpen(false)
-            refetch()
-            if (resp.authorize_url) {
-              window.location.href = resp.authorize_url
-            }
-          } catch (err: unknown) {
-            setSaveError(err instanceof Error ? err.message : 'Failed to set up OAuth')
-          } finally {
-            setSaving(false)
-          }
-        }}
+      />
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        title="Delete credential"
+        description={`Are you sure you want to delete "${deleteTarget?.name}"?`}
+        confirmLabel="Delete"
+        variant="destructive"
+        onConfirm={confirmDelete}
       />
     </div>
   )
+}
+
+function formatRelativeTime(isoDate: string): string {
+  const diff = new Date(isoDate).getTime() - Date.now()
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24))
+  if (days > 1) return `${days} days`
+  const hours = Math.floor(diff / (1000 * 60 * 60))
+  if (hours > 0) return `${hours} hours`
+  return 'soon'
 }
 
 function OAuthStatusBadge({ scopeId }: { scopeId: string }) {
@@ -359,16 +357,26 @@ function OAuthStatusBadge({ scopeId }: { scopeId: string }) {
     not_configured: 'bg-muted text-muted-foreground border-border',
   }
 
-  const labels: Record<string, string> = {
-    valid: 'Connected',
-    expired: 'Expired',
-    refresh_needed: 'Needs Refresh',
-    not_configured: 'Not Connected',
+  let label = ''
+  switch (status.status) {
+    case 'valid':
+      label = status.expires_at
+        ? `Connected \u2014 ${formatRelativeTime(status.expires_at)} left`
+        : 'Connected'
+      break
+    case 'expired':
+      label = 'Expired'
+      break
+    case 'refresh_needed':
+      label = 'Needs Refresh'
+      break
+    default:
+      label = 'Not Connected'
   }
 
   return (
     <Badge variant="outline" className={`text-xs ${colors[status.status] ?? colors.not_configured}`}>
-      {labels[status.status] ?? 'Not Connected'}
+      {label}
     </Badge>
   )
 }
@@ -382,9 +390,7 @@ function AuthScopeDialog({
   saving,
   editing,
   providers,
-  templates,
   saveError,
-  onQuickSetup,
 }: {
   open: boolean
   onClose: () => void
@@ -395,14 +401,8 @@ function AuthScopeDialog({
   editing: boolean
   saveError: string | null
   providers: { id: string; name: string }[]
-  templates: OAuthTemplate[]
-  onQuickSetup: (name: string, templateId: string, clientId: string, clientSecret: string) => void
 }) {
   const [hintInput, setHintInput] = useState('')
-  const [oauthMode, setOauthMode] = useState<'template' | 'existing'>('template')
-  const [selectedTemplate, setSelectedTemplate] = useState<OAuthTemplate | null>(null)
-  const [clientId, setClientId] = useState('')
-  const [clientSecret, setClientSecret] = useState('')
 
   function addHint() {
     if (!hintInput) return
@@ -420,20 +420,11 @@ function AuthScopeDialog({
     }))
   }
 
-  function resetOAuthState() {
-    setSelectedTemplate(null)
-    setClientId('')
-    setClientSecret('')
-    setOauthMode('template')
-  }
-
-  const isQuickSetup = !editing && form.type === 'oauth2' && oauthMode === 'template' && selectedTemplate
-
   return (
-    <Dialog open={open} onOpenChange={() => { onClose(); resetOAuthState() }}>
+    <Dialog open={open} onOpenChange={() => onClose()}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>{editing ? 'Edit Auth Scope' : 'Add Auth Scope'}</DialogTitle>
+          <DialogTitle>{editing ? 'Edit Credential' : 'Add Credential'}</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
           <div className="space-y-2">
@@ -447,10 +438,9 @@ function AuthScopeDialog({
             <Label className="text-xs text-muted-foreground">Type</Label>
             <Select
               value={form.type}
-              onValueChange={(v) => {
+              onValueChange={(v) =>
                 setForm((f) => ({ ...f, type: v as 'env' | 'header' | 'oauth2' }))
-                resetOAuthState()
-              }}
+              }
             >
               <SelectTrigger>
                 <SelectValue />
@@ -463,148 +453,32 @@ function AuthScopeDialog({
             </Select>
           </div>
 
-          {form.type === 'oauth2' && !editing && (
+          {form.type === 'oauth2' && (
             <div className="space-y-3">
-              <div className="flex gap-2">
-                <Button
-                  type="button"
-                  variant={oauthMode === 'template' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setOauthMode('template')}
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">OAuth Provider</Label>
+                <Select
+                  value={form.oauth_provider_id}
+                  onValueChange={(v) => setForm((f) => ({ ...f, oauth_provider_id: v }))}
                 >
-                  Use Template
-                </Button>
-                <Button
-                  type="button"
-                  variant={oauthMode === 'existing' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => { setOauthMode('existing'); setSelectedTemplate(null) }}
-                >
-                  Use Existing Provider
-                </Button>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a provider..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {providers.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
-
-              {oauthMode === 'template' && (
-                <>
-                  {!selectedTemplate ? (
-                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                      {templates.map((tpl) => (
-                        <button
-                          key={tpl.id}
-                          type="button"
-                          className="flex flex-col items-center gap-1 rounded-md border border-border p-3 text-sm hover:border-primary hover:bg-muted/50 transition-colors"
-                          onClick={() => setSelectedTemplate(tpl)}
-                        >
-                          <span className="font-medium">{tpl.name}</span>
-                        </button>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="space-y-3 rounded-md border border-border p-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium">{selectedTemplate.name}</span>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="h-6 text-xs"
-                          onClick={() => setSelectedTemplate(null)}
-                        >
-                          Change
-                        </Button>
-                      </div>
-                      <p className="text-xs text-muted-foreground">{selectedTemplate.help_text}</p>
-                      {selectedTemplate.setup_url && (
-                        <a
-                          href={selectedTemplate.setup_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-                        >
-                          <ExternalLink className="h-3 w-3" />
-                          Open {selectedTemplate.name} developer settings
-                        </a>
-                      )}
-                      {selectedTemplate.callback_url && (
-                        <div className="space-y-1">
-                          <Label className="text-xs text-muted-foreground">Callback URL (copy this)</Label>
-                          <Input
-                            readOnly
-                            value={selectedTemplate.callback_url}
-                            className="font-mono text-xs"
-                            onClick={(e) => (e.target as HTMLInputElement).select()}
-                          />
-                        </div>
-                      )}
-                      <div className="space-y-1">
-                        <Label className="text-xs text-muted-foreground">Client ID</Label>
-                        <Input
-                          value={clientId}
-                          onChange={(e) => setClientId(e.target.value)}
-                          placeholder="Paste your client ID"
-                        />
-                      </div>
-                      {selectedTemplate.needs_secret && (
-                        <div className="space-y-1">
-                          <Label className="text-xs text-muted-foreground">Client Secret</Label>
-                          <Input
-                            type="password"
-                            value={clientSecret}
-                            onChange={(e) => setClientSecret(e.target.value)}
-                            placeholder="Paste your client secret"
-                          />
-                        </div>
-                      )}
-                      {selectedTemplate.scopes.length > 0 && (
-                        <div className="flex flex-wrap gap-1">
-                          <span className="text-xs text-muted-foreground mr-1">Scopes:</span>
-                          {selectedTemplate.scopes.map((s) => (
-                            <Badge key={s} variant="secondary" className="font-mono text-xs">{s}</Badge>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </>
+              {!editing && (
+                <p className="text-xs text-muted-foreground">
+                  For easy setup with templates, use{' '}
+                  <Link to="/setup" className="text-primary hover:underline" onClick={onClose}>
+                    Quick Setup &rarr;
+                  </Link>
+                </p>
               )}
-
-              {oauthMode === 'existing' && (
-                <div className="space-y-2">
-                  <Label className="text-xs text-muted-foreground">OAuth Provider</Label>
-                  <Select
-                    value={form.oauth_provider_id}
-                    onValueChange={(v) => setForm((f) => ({ ...f, oauth_provider_id: v }))}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select a provider..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {providers.map((p) => (
-                        <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
-            </div>
-          )}
-
-          {form.type === 'oauth2' && editing && (
-            <div className="space-y-2">
-              <Label className="text-xs text-muted-foreground">OAuth Provider</Label>
-              <Select
-                value={form.oauth_provider_id}
-                onValueChange={(v) => setForm((f) => ({ ...f, oauth_provider_id: v }))}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a provider..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {providers.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
             </div>
           )}
 
@@ -645,21 +519,12 @@ function AuthScopeDialog({
           <p className="text-sm text-destructive">{saveError}</p>
         )}
         <DialogFooter>
-          <Button variant="outline" onClick={() => { onClose(); resetOAuthState() }}>
+          <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          {isQuickSetup ? (
-            <Button
-              onClick={() => onQuickSetup(form.name, selectedTemplate.id, clientId, clientSecret)}
-              disabled={saving || !form.name || !clientId}
-            >
-              {saving ? 'Setting up...' : 'Save & Authenticate'}
-            </Button>
-          ) : (
-            <Button onClick={onSave} disabled={saving || !form.name}>
-              {saving ? 'Saving...' : 'Save'}
-            </Button>
-          )}
+          <Button onClick={onSave} disabled={saving || !form.name}>
+            {saving ? 'Saving...' : 'Save'}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

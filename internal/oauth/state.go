@@ -3,6 +3,7 @@ package oauth
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
 	"sync"
 	"time"
 )
@@ -31,19 +32,22 @@ func NewStateStore() *StateStore {
 
 // Create generates a new state token and stores it with the given auth scope ID
 // and optional PKCE code verifier. Returns the state token.
-func (s *StateStore) Create(authScopeID, codeVerifier string) string {
+func (s *StateStore) Create(authScopeID, codeVerifier string) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	s.cleanup()
 
-	token := generateStateToken()
+	token, err := generateStateToken()
+	if err != nil {
+		return "", err
+	}
 	s.entries[token] = StateEntry{
 		AuthScopeID:  authScopeID,
 		CodeVerifier: codeVerifier,
 		CreatedAt:    time.Now(),
 	}
-	return token
+	return token, nil
 }
 
 // Validate checks a state token and returns the associated entry.
@@ -74,10 +78,10 @@ func (s *StateStore) cleanup() {
 	}
 }
 
-func generateStateToken() string {
+func generateStateToken() (string, error) {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
-		panic("crypto/rand failed: " + err.Error())
+		return "", fmt.Errorf("crypto/rand: %w", err)
 	}
-	return hex.EncodeToString(b)
+	return hex.EncodeToString(b), nil
 }

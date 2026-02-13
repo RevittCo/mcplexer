@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/revitteth/mcplexer/internal/approval"
+	"github.com/revitteth/mcplexer/internal/audit"
 	"github.com/revitteth/mcplexer/internal/config"
 	"github.com/revitteth/mcplexer/internal/downstream"
 	"github.com/revitteth/mcplexer/internal/oauth"
@@ -16,12 +18,15 @@ import (
 
 // RouterDeps holds the dependencies needed by the HTTP API router.
 type RouterDeps struct {
-	Store       store.Store
-	ConfigSvc   *config.Service
-	Engine      *routing.Engine
-	Manager     *downstream.Manager    // optional; enables tool discovery
-	FlowManager *oauth.FlowManager     // optional; enables OAuth flows
-	Encryptor   *secrets.AgeEncryptor  // optional; enables secret encryption
+	Store           store.Store
+	ConfigSvc       *config.Service
+	Engine          *routing.Engine
+	Manager         *downstream.Manager    // optional; enables tool discovery
+	FlowManager     *oauth.FlowManager     // optional; enables OAuth flows
+	Encryptor       *secrets.AgeEncryptor  // optional; enables secret encryption
+	AuditBus        *audit.Bus             // optional; enables SSE audit stream
+	ApprovalManager *approval.Manager      // optional; enables approval system
+	ApprovalBus     *approval.Bus          // optional; enables approval SSE stream
 }
 
 // NewRouter creates an http.Handler with all API routes and SPA fallback.
@@ -56,8 +61,27 @@ func NewRouter(deps RouterDeps) http.Handler {
 	mux.HandleFunc("PUT /api/v1/auth-scopes/{id}", auth.update)
 	mux.HandleFunc("DELETE /api/v1/auth-scopes/{id}", auth.delete)
 
-	audit := &auditHandler{store: deps.Store}
-	mux.HandleFunc("GET /api/v1/audit", audit.query)
+	auditH := &auditHandler{store: deps.Store}
+	mux.HandleFunc("GET /api/v1/audit", auditH.query)
+
+	if deps.AuditBus != nil {
+		sse := &auditSSEHandler{bus: deps.AuditBus}
+		mux.HandleFunc("GET /api/v1/audit/stream", sse.stream)
+	}
+
+	if deps.ApprovalManager != nil {
+		ah := &approvalHandler{manager: deps.ApprovalManager, store: deps.Store}
+		mux.HandleFunc("GET /api/v1/approvals", ah.list)
+		mux.HandleFunc("GET /api/v1/approvals/{id}", ah.get)
+		mux.HandleFunc("POST /api/v1/approvals/{id}/resolve", ah.resolve)
+	}
+
+	if deps.ApprovalBus != nil {
+		asse := &approvalSSEHandler{bus: deps.ApprovalBus}
+		mux.HandleFunc("GET /api/v1/approvals/stream", asse.stream)
+	}
+
+	mux.HandleFunc("GET /api/v1/health", healthCheck)
 
 	dash := &dashboardHandler{
 		sessionStore:    deps.Store,
@@ -95,6 +119,7 @@ func NewRouter(deps RouterDeps) http.Handler {
 			encryptor:   deps.Encryptor,
 		}
 		mux.HandleFunc("POST /api/v1/downstreams/{id}/connect", dc.connect)
+		mux.HandleFunc("GET /api/v1/downstreams/{id}/oauth-capabilities", dc.capabilities)
 	}
 
 	op := &oauthProviderHandler{svc: deps.ConfigSvc, store: deps.Store, encryptor: deps.Encryptor}

@@ -26,12 +26,14 @@ func (d *DB) CreateRouteRule(ctx context.Context, r *store.RouteRule) error {
 
 	_, err := d.q.ExecContext(ctx, `
 		INSERT INTO route_rules
-			(id, priority, workspace_id, path_glob, tool_match,
+			(id, name, priority, workspace_id, path_glob, tool_match,
 			 downstream_server_id, auth_scope_id, policy, log_level,
+			 requires_approval, approval_timeout,
 			 source, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		r.ID, r.Priority, r.WorkspaceID, r.PathGlob, toolMatch,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		r.ID, r.Name, r.Priority, r.WorkspaceID, r.PathGlob, toolMatch,
 		r.DownstreamServerID, r.AuthScopeID, r.Policy, r.LogLevel,
+		boolToInt(r.RequiresApproval), r.ApprovalTimeout,
 		r.Source, formatTime(r.CreatedAt), formatTime(r.UpdatedAt),
 	)
 	if err != nil {
@@ -42,8 +44,9 @@ func (d *DB) CreateRouteRule(ctx context.Context, r *store.RouteRule) error {
 
 func (d *DB) GetRouteRule(ctx context.Context, id string) (*store.RouteRule, error) {
 	row := d.q.QueryRowContext(ctx, `
-		SELECT id, priority, workspace_id, path_glob, tool_match,
+		SELECT id, name, priority, workspace_id, path_glob, tool_match,
 		       downstream_server_id, auth_scope_id, policy, log_level,
+		       requires_approval, approval_timeout,
 		       source, created_at, updated_at
 		FROM route_rules WHERE id = ?`, id)
 	return scanRouteRule(row)
@@ -54,16 +57,18 @@ func (d *DB) ListRouteRules(ctx context.Context, workspaceID string) ([]store.Ro
 	var err error
 	if workspaceID != "" {
 		rows, err = d.q.QueryContext(ctx, `
-			SELECT id, priority, workspace_id, path_glob, tool_match,
+			SELECT id, name, priority, workspace_id, path_glob, tool_match,
 			       downstream_server_id, auth_scope_id, policy, log_level,
+			       requires_approval, approval_timeout,
 			       source, created_at, updated_at
 			FROM route_rules
 			WHERE workspace_id = ?
 			ORDER BY priority DESC, id ASC`, workspaceID)
 	} else {
 		rows, err = d.q.QueryContext(ctx, `
-			SELECT id, priority, workspace_id, path_glob, tool_match,
+			SELECT id, name, priority, workspace_id, path_glob, tool_match,
 			       downstream_server_id, auth_scope_id, policy, log_level,
+			       requires_approval, approval_timeout,
 			       source, created_at, updated_at
 			FROM route_rules
 			ORDER BY priority DESC, id ASC`)
@@ -93,13 +98,15 @@ func (d *DB) UpdateRouteRule(ctx context.Context, r *store.RouteRule) error {
 
 	res, err := d.q.ExecContext(ctx, `
 		UPDATE route_rules
-		SET priority = ?, workspace_id = ?, path_glob = ?, tool_match = ?,
+		SET name = ?, priority = ?, workspace_id = ?, path_glob = ?, tool_match = ?,
 		    downstream_server_id = ?, auth_scope_id = ?, policy = ?,
-		    log_level = ?, source = ?, updated_at = ?
+		    log_level = ?, requires_approval = ?, approval_timeout = ?,
+		    source = ?, updated_at = ?
 		WHERE id = ?`,
-		r.Priority, r.WorkspaceID, r.PathGlob, toolMatch,
+		r.Name, r.Priority, r.WorkspaceID, r.PathGlob, toolMatch,
 		r.DownstreamServerID, r.AuthScopeID, r.Policy,
-		r.LogLevel, r.Source, formatTime(r.UpdatedAt), r.ID,
+		r.LogLevel, boolToInt(r.RequiresApproval), r.ApprovalTimeout,
+		r.Source, formatTime(r.UpdatedAt), r.ID,
 	)
 	if err != nil {
 		return mapConstraintError(err)
@@ -118,9 +125,11 @@ func (d *DB) DeleteRouteRule(ctx context.Context, id string) error {
 func scanRouteRule(row *sql.Row) (*store.RouteRule, error) {
 	var r store.RouteRule
 	var createdAt, updatedAt, toolMatch string
+	var requiresApproval int
 	err := row.Scan(
-		&r.ID, &r.Priority, &r.WorkspaceID, &r.PathGlob, &toolMatch,
+		&r.ID, &r.Name, &r.Priority, &r.WorkspaceID, &r.PathGlob, &toolMatch,
 		&r.DownstreamServerID, &r.AuthScopeID, &r.Policy, &r.LogLevel,
+		&requiresApproval, &r.ApprovalTimeout,
 		&r.Source, &createdAt, &updatedAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -130,6 +139,7 @@ func scanRouteRule(row *sql.Row) (*store.RouteRule, error) {
 		return nil, err
 	}
 	r.ToolMatch = json.RawMessage(toolMatch)
+	r.RequiresApproval = requiresApproval != 0
 	r.CreatedAt = parseTime(createdAt)
 	r.UpdatedAt = parseTime(updatedAt)
 	return &r, nil
@@ -138,16 +148,26 @@ func scanRouteRule(row *sql.Row) (*store.RouteRule, error) {
 func scanRouteRuleRow(row rowScanner) (*store.RouteRule, error) {
 	var r store.RouteRule
 	var createdAt, updatedAt, toolMatch string
+	var requiresApproval int
 	err := row.Scan(
-		&r.ID, &r.Priority, &r.WorkspaceID, &r.PathGlob, &toolMatch,
+		&r.ID, &r.Name, &r.Priority, &r.WorkspaceID, &r.PathGlob, &toolMatch,
 		&r.DownstreamServerID, &r.AuthScopeID, &r.Policy, &r.LogLevel,
+		&requiresApproval, &r.ApprovalTimeout,
 		&r.Source, &createdAt, &updatedAt,
 	)
 	if err != nil {
 		return nil, err
 	}
 	r.ToolMatch = json.RawMessage(toolMatch)
+	r.RequiresApproval = requiresApproval != 0
 	r.CreatedAt = parseTime(createdAt)
 	r.UpdatedAt = parseTime(updatedAt)
 	return &r, nil
+}
+
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }
