@@ -14,6 +14,7 @@ type parsedRule struct {
 	toolPatterns    []string
 	specificity     int
 	toolSpecificity int
+	namespace       string // tool_namespace from downstream server
 }
 
 // parseRules converts store RouteRules into parsedRules.

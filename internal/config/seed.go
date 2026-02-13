@@ -10,24 +10,56 @@ import (
 	"github.com/revitteth/mcplexer/internal/store"
 )
 
-// SeedDefaultOAuthProviders creates OAuth provider records from built-in
-// templates if none exist in the store. This runs on first startup so
-// users see pre-configured providers (minus client credentials) in the UI.
+// SeedDefaultOAuthProviders creates or updates OAuth provider records from
+// built-in templates. On first startup it creates all providers; on subsequent
+// runs it updates template-sourced fields (URLs, scopes, PKCE) on existing
+// seeded providers while preserving user-configured fields (client ID/secret).
+// If scopes changed, invalidates existing tokens so users re-auth with correct permissions.
 func SeedDefaultOAuthProviders(ctx context.Context, s store.Store) error {
 	existing, err := s.ListOAuthProviders(ctx)
 	if err != nil {
 		return err
 	}
-	if len(existing) > 0 {
-		return nil
+
+	// Index existing providers by template_id for fast lookup.
+	byTemplate := make(map[string]*store.OAuthProvider, len(existing))
+	for i := range existing {
+		if existing[i].TemplateID != "" {
+			byTemplate[existing[i].TemplateID] = &existing[i]
+		}
 	}
 
 	templates := oauth.ListTemplates()
-	slog.Info("seeding default OAuth providers", "count", len(templates))
-
 	for _, t := range templates {
 		scopes, _ := json.Marshal(t.Scopes)
 		now := time.Now().UTC()
+
+		if ep, ok := byTemplate[t.ID]; ok {
+			scopesChanged := string(ep.Scopes) != string(scopes)
+
+			// Update template-sourced fields; preserve client credentials.
+			ep.AuthorizeURL = t.AuthorizeURL
+			ep.TokenURL = t.TokenURL
+			ep.Scopes = scopes
+			ep.UsePKCE = t.UsePKCE
+			ep.UpdatedAt = now
+			if err := s.UpdateOAuthProvider(ctx, ep); err != nil {
+				return err
+			}
+
+			// If scopes changed, invalidate tokens on linked auth scopes
+			// so users re-auth with the correct permissions.
+			if scopesChanged {
+				invalidateProviderTokens(ctx, s, ep.ID)
+				slog.Info("updated seeded OAuth provider (scopes changed, tokens invalidated)",
+					"id", ep.ID, "name", ep.Name)
+			} else {
+				slog.Info("updated seeded OAuth provider",
+					"id", ep.ID, "name", ep.Name)
+			}
+			continue
+		}
+
 		p := &store.OAuthProvider{
 			ID:           t.ID,
 			Name:         t.Name,
@@ -142,6 +174,28 @@ var defaultWorkspaces = []store.Workspace{
 }
 
 func strPtr(s string) *string { return &s }
+
+// invalidateProviderTokens clears OAuth token data on all auth scopes
+// linked to the given provider, forcing users to re-authenticate.
+func invalidateProviderTokens(ctx context.Context, s store.Store, providerID string) {
+	scopes, err := s.ListAuthScopes(ctx)
+	if err != nil {
+		slog.Warn("failed to list auth scopes for token invalidation", "error", err)
+		return
+	}
+	for _, scope := range scopes {
+		if scope.OAuthProviderID != providerID {
+			continue
+		}
+		if err := s.UpdateAuthScopeTokenData(ctx, scope.ID, nil); err != nil {
+			slog.Warn("failed to invalidate token",
+				"scope_id", scope.ID, "error", err)
+			continue
+		}
+		slog.Info("invalidated token for scope (provider scopes changed)",
+			"scope_id", scope.ID, "scope_name", scope.Name)
+	}
+}
 
 // SeedDefaultWorkspaces creates workspace records if none exist.
 func SeedDefaultWorkspaces(ctx context.Context, s store.Store) error {

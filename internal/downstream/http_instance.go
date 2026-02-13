@@ -264,6 +264,8 @@ func (h *HTTPInstance) doRPC(ctx context.Context, rpcReq jsonRPCRequest) (json.R
 // Per MCP Streamable HTTP spec, the server sends SSE events with "data:" lines.
 func (h *HTTPInstance) readSSEResponse(body io.Reader) (json.RawMessage, error) {
 	scanner := bufio.NewScanner(body)
+	// GitHub's MCP API returns large tool lists that exceed the default 64KB buffer.
+	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024) // up to 4MB
 	for scanner.Scan() {
 		line := scanner.Text()
 		if !strings.HasPrefix(line, "data: ") {

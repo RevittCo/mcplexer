@@ -56,9 +56,38 @@ func (e *Engine) Route(ctx context.Context, rc RouteContext) (*RouteResult, erro
 	}
 
 	parsed := parseRules(rules)
+	e.resolveNamespaces(ctx, parsed)
 	sortRules(parsed)
 
 	return matchRoute(parsed, rc)
+}
+
+// resolveNamespaces looks up the tool_namespace for each rule's downstream
+// server so that matchRoute can enforce namespace-aware matching.
+func (e *Engine) resolveNamespaces(ctx context.Context, rules []parsedRule) {
+	serverIDs := make(map[string]struct{})
+	for _, r := range rules {
+		if r.DownstreamServerID != "" {
+			serverIDs[r.DownstreamServerID] = struct{}{}
+		}
+	}
+
+	nsMap := make(map[string]string, len(serverIDs))
+	for id := range serverIDs {
+		srv, err := e.store.GetDownstreamServer(ctx, id)
+		if err != nil || srv == nil {
+			continue
+		}
+		if srv.ToolNamespace != "" {
+			nsMap[id] = srv.ToolNamespace
+		}
+	}
+
+	for i := range rules {
+		if ns, ok := nsMap[rules[i].DownstreamServerID]; ok {
+			rules[i].namespace = ns
+		}
+	}
 }
 
 // RouteWithFallback tries routing through a chain of workspace ancestors (most
@@ -124,6 +153,12 @@ func matchRoute(rules []parsedRule, rc RouteContext) (*RouteResult, error) {
 			continue
 		}
 		if !matchTool(rc.ToolName, r.toolPatterns) {
+			continue
+		}
+		// Namespace guard: if the rule's downstream has a tool namespace,
+		// the tool must belong to that namespace. Prevents a wildcard rule
+		// pointing to one server from catching tools for another.
+		if r.namespace != "" && !strings.HasPrefix(rc.ToolName, r.namespace+"__") {
 			continue
 		}
 

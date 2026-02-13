@@ -116,10 +116,14 @@ func (fm *FlowManager) TokenStatus(
 	}
 
 	exp := td.ExpiresAt
+
+	// Zero ExpiresAt means the provider didn't supply expires_in (e.g. GitHub).
+	// Treat these tokens as non-expiring.
+	if exp.IsZero() {
+		return "valid", nil, nil
+	}
+
 	if time.Now().After(exp) {
-		if td.RefreshToken != "" {
-			return "expired", &exp, nil
-		}
 		return "expired", &exp, nil
 	}
 
@@ -147,7 +151,9 @@ func (fm *FlowManager) GetValidToken(
 		return "", fmt.Errorf("decrypt token data: %w", err)
 	}
 
-	if time.Until(td.ExpiresAt) > 5*time.Minute {
+	// Zero ExpiresAt means the provider didn't supply expires_in (e.g. GitHub).
+	// Treat these tokens as non-expiring.
+	if td.ExpiresAt.IsZero() || time.Until(td.ExpiresAt) > 5*time.Minute {
 		return td.AccessToken, nil
 	}
 

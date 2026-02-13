@@ -167,13 +167,18 @@ func (m *Manager) ListAllTools(ctx context.Context) (map[string]json.RawMessage,
 
 // ListToolsForServers queries specific downstream servers for their tools in parallel.
 func (m *Manager) ListToolsForServers(ctx context.Context, serverIDs []string) (map[string]json.RawMessage, error) {
+	// Resolve auth scopes for each server from route rules so that
+	// HTTP downstreams get proper Authorization headers during discovery.
+	scopeByServer := m.resolveAuthScopes(ctx, serverIDs)
+
 	var mu sync.Mutex
 	result := make(map[string]json.RawMessage, len(serverIDs))
 
 	g, gCtx := errgroup.WithContext(ctx)
 	for _, id := range serverIDs {
+		authScope := scopeByServer[id]
 		g.Go(func() error {
-			tools, err := m.ListTools(gCtx, id, "")
+			tools, err := m.ListTools(gCtx, id, authScope)
 			if err != nil {
 				slog.Warn("failed to list tools", "server", id, "error", err)
 				return nil
@@ -189,6 +194,28 @@ func (m *Manager) ListToolsForServers(ctx context.Context, serverIDs []string) (
 		return nil, err
 	}
 	return result, nil
+}
+
+// resolveAuthScopes finds an auth scope for each server by scanning route rules.
+func (m *Manager) resolveAuthScopes(ctx context.Context, serverIDs []string) map[string]string {
+	result := make(map[string]string, len(serverIDs))
+	rules, err := m.store.ListRouteRules(ctx, "")
+	if err != nil {
+		return result
+	}
+	need := make(map[string]bool, len(serverIDs))
+	for _, id := range serverIDs {
+		need[id] = true
+	}
+	for _, rule := range rules {
+		if !need[rule.DownstreamServerID] || rule.AuthScopeID == "" {
+			continue
+		}
+		if _, ok := result[rule.DownstreamServerID]; !ok {
+			result[rule.DownstreamServerID] = rule.AuthScopeID
+		}
+	}
+	return result
 }
 
 // InstanceInfo describes a running downstream instance for status reporting.

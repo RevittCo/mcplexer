@@ -10,13 +10,22 @@ import (
 )
 
 // mockRouteStore implements store.Store for routing engine tests.
-// Only ListRouteRules is meaningful; all other methods are stubs.
+// Only ListRouteRules and GetDownstreamServer are meaningful; all other methods are stubs.
 type mockRouteStore struct {
-	rules map[string][]store.RouteRule
+	rules       map[string][]store.RouteRule
+	downstreams map[string]*store.DownstreamServer
 }
 
 func (m *mockRouteStore) ListRouteRules(_ context.Context, wsID string) ([]store.RouteRule, error) {
 	return m.rules[wsID], nil
+}
+func (m *mockRouteStore) GetDownstreamServer(_ context.Context, id string) (*store.DownstreamServer, error) {
+	if m.downstreams != nil {
+		if ds, ok := m.downstreams[id]; ok {
+			return ds, nil
+		}
+	}
+	return nil, store.ErrNotFound
 }
 func (m *mockRouteStore) CreateRouteRule(context.Context, *store.RouteRule) error        { return nil }
 func (m *mockRouteStore) GetRouteRule(context.Context, string) (*store.RouteRule, error) { return nil, nil }
@@ -42,7 +51,6 @@ func (m *mockRouteStore) ListOAuthProviders(context.Context) ([]store.OAuthProvi
 func (m *mockRouteStore) UpdateOAuthProvider(context.Context, *store.OAuthProvider) error              { return nil }
 func (m *mockRouteStore) DeleteOAuthProvider(context.Context, string) error                            { return nil }
 func (m *mockRouteStore) CreateDownstreamServer(context.Context, *store.DownstreamServer) error        { return nil }
-func (m *mockRouteStore) GetDownstreamServer(context.Context, string) (*store.DownstreamServer, error) { return nil, nil }
 func (m *mockRouteStore) GetDownstreamServerByName(context.Context, string) (*store.DownstreamServer, error) { return nil, nil }
 func (m *mockRouteStore) ListDownstreamServers(context.Context) ([]store.DownstreamServer, error)            { return nil, nil }
 func (m *mockRouteStore) UpdateDownstreamServer(context.Context, *store.DownstreamServer) error              { return nil }
@@ -544,6 +552,115 @@ func TestComputeSubpath(t *testing.T) {
 			if got != tt.want {
 				t.Errorf("ComputeSubpath(%q, %q) = %q, want %q",
 					tt.clientRoot, tt.wsRoot, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMatchRoute_NamespaceAware(t *testing.T) {
+	rules := []parsedRule{
+		{
+			RouteRule: store.RouteRule{
+				ID: "allow-linear", Priority: 100, PathGlob: "**",
+				DownstreamServerID: "linear-server", Policy: "allow",
+			},
+			toolPatterns: []string{"*"},
+			specificity:  0,
+			namespace:    "linear",
+		},
+		{
+			RouteRule: store.RouteRule{
+				ID: "global-deny", Priority: 0, PathGlob: "**",
+				Policy: "deny",
+			},
+			toolPatterns: []string{"*"},
+			specificity:  0,
+		},
+	}
+	sortRules(rules)
+
+	tests := []struct {
+		name    string
+		tool    string
+		wantDS  string
+		wantErr error
+	}{
+		{"linear tool matches linear rule", "linear__search", "linear-server", nil},
+		{"github tool skips linear rule, hits deny", "github__get_label", "", ErrDenied},
+		{"no-namespace tool skips linear rule, hits deny", "some_tool", "", ErrDenied},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := matchRoute(rules, RouteContext{ToolName: tt.tool})
+			if err != tt.wantErr {
+				t.Fatalf("err = %v, want %v", err, tt.wantErr)
+			}
+			if tt.wantErr != nil {
+				return
+			}
+			if result.DownstreamServerID != tt.wantDS {
+				t.Errorf("ds = %q, want %q", result.DownstreamServerID, tt.wantDS)
+			}
+		})
+	}
+}
+
+func TestRoute_NamespaceAware(t *testing.T) {
+	ms := &mockRouteStore{
+		rules: map[string][]store.RouteRule{
+			"ws1": {
+				{
+					ID: "allow-linear", WorkspaceID: "ws1",
+					Priority: 100, PathGlob: "**",
+					DownstreamServerID: "linear-server",
+					Policy: "allow", ToolMatch: json.RawMessage(`["*"]`),
+				},
+				{
+					ID: "allow-github", WorkspaceID: "ws1",
+					Priority: 100, PathGlob: "**",
+					DownstreamServerID: "github-server",
+					Policy: "allow", ToolMatch: json.RawMessage(`["*"]`),
+				},
+				{
+					ID: "global-deny", WorkspaceID: "ws1",
+					Priority: 0, PathGlob: "**",
+					Policy: "deny", ToolMatch: json.RawMessage(`["*"]`),
+				},
+			},
+		},
+		downstreams: map[string]*store.DownstreamServer{
+			"linear-server": {ID: "linear-server", ToolNamespace: "linear"},
+			"github-server": {ID: "github-server", ToolNamespace: "github"},
+		},
+	}
+	engine := NewEngine(ms)
+
+	tests := []struct {
+		name    string
+		tool    string
+		wantDS  string
+		wantErr error
+	}{
+		{"github tool routes to github", "github__get_label", "github-server", nil},
+		{"linear tool routes to linear", "linear__search", "linear-server", nil},
+		{"unknown tool hits deny", "slack__post", "", ErrDenied},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := engine.Route(t.Context(), RouteContext{
+				WorkspaceID: "ws1",
+				ToolName:    tt.tool,
+			})
+			if err != tt.wantErr {
+				t.Fatalf("err = %v, want %v", err, tt.wantErr)
+			}
+			if tt.wantErr != nil {
+				return
+			}
+			if result.DownstreamServerID != tt.wantDS {
+				t.Errorf("ds = %q, want %q", result.DownstreamServerID, tt.wantDS)
 			}
 		})
 	}
