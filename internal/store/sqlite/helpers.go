@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/revitteth/mcplexer/internal/store"
+	"github.com/revittco/mcplexer/internal/store"
 )
 
 const timeFormat = time.RFC3339

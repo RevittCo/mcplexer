@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/revitteth/mcplexer/internal/store"
+	"github.com/revittco/mcplexer/internal/store"
 )
 
 func (d *DB) CreateOAuthProvider(ctx context.Context, p *store.OAuthProvider) error {

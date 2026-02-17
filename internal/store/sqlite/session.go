@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/revitteth/mcplexer/internal/store"
+	"github.com/revittco/mcplexer/internal/store"
 )
 
 func (d *DB) CreateSession(ctx context.Context, s *store.Session) error {

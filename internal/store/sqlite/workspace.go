@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/revitteth/mcplexer/internal/store"
+	"github.com/revittco/mcplexer/internal/store"
 )
 
 func (d *DB) CreateWorkspace(ctx context.Context, w *store.Workspace) error {

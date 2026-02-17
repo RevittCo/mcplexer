@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/revitteth/mcplexer/internal/store"
+	"github.com/revittco/mcplexer/internal/store"
 )
 
 // Manager combines store-based auth scope storage with age encryption.

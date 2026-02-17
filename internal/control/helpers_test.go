@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/revitteth/mcplexer/internal/gateway"
-	"github.com/revitteth/mcplexer/internal/store"
-	"github.com/revitteth/mcplexer/internal/store/sqlite"
+	"github.com/revittco/mcplexer/internal/gateway"
+	"github.com/revittco/mcplexer/internal/store"
+	"github.com/revittco/mcplexer/internal/store/sqlite"
 )
 
 func newTestDB(t *testing.T) *sqlite.DB {

@@ -1,4 +1,4 @@
-module github.com/revitteth/mcplexer
+module github.com/revittco/mcplexer
 
 go 1.25.0
 

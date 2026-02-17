@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/revitteth/mcplexer/internal/routing"
-	"github.com/revitteth/mcplexer/internal/store"
+	"github.com/revittco/mcplexer/internal/routing"
+	"github.com/revittco/mcplexer/internal/store"
 )
 
 type dryRunHandler struct {

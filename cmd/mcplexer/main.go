@@ -18,18 +18,18 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
-	"github.com/revitteth/mcplexer/internal/api"
-	"github.com/revitteth/mcplexer/internal/approval"
-	"github.com/revitteth/mcplexer/internal/audit"
-	"github.com/revitteth/mcplexer/internal/auth"
-	"github.com/revitteth/mcplexer/internal/config"
-	"github.com/revitteth/mcplexer/internal/control"
-	"github.com/revitteth/mcplexer/internal/downstream"
-	"github.com/revitteth/mcplexer/internal/gateway"
-	"github.com/revitteth/mcplexer/internal/oauth"
-	"github.com/revitteth/mcplexer/internal/routing"
-	"github.com/revitteth/mcplexer/internal/secrets"
-	"github.com/revitteth/mcplexer/internal/store/sqlite"
+	"github.com/revittco/mcplexer/internal/api"
+	"github.com/revittco/mcplexer/internal/approval"
+	"github.com/revittco/mcplexer/internal/audit"
+	"github.com/revittco/mcplexer/internal/auth"
+	"github.com/revittco/mcplexer/internal/config"
+	"github.com/revittco/mcplexer/internal/control"
+	"github.com/revittco/mcplexer/internal/downstream"
+	"github.com/revittco/mcplexer/internal/gateway"
+	"github.com/revittco/mcplexer/internal/oauth"
+	"github.com/revittco/mcplexer/internal/routing"
+	"github.com/revittco/mcplexer/internal/secrets"
+	"github.com/revittco/mcplexer/internal/store/sqlite"
 )
 
 func main() {

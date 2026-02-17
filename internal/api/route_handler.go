@@ -4,8 +4,8 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/revitteth/mcplexer/internal/config"
-	"github.com/revitteth/mcplexer/internal/store"
+	"github.com/revittco/mcplexer/internal/config"
+	"github.com/revittco/mcplexer/internal/store"
 )
 
 type routeHandler struct {

@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/revitteth/mcplexer/internal/auth"
-	"github.com/revitteth/mcplexer/internal/store"
+	"github.com/revittco/mcplexer/internal/auth"
+	"github.com/revittco/mcplexer/internal/store"
 	"golang.org/x/sync/errgroup"
 )
 

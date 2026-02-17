@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/revitteth/mcplexer/internal/downstream"
-	"github.com/revitteth/mcplexer/internal/store"
+	"github.com/revittco/mcplexer/internal/downstream"
+	"github.com/revittco/mcplexer/internal/store"
 )
 
 type dashboardHandler struct {

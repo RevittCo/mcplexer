@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/revitteth/mcplexer/internal/store"
+	"github.com/revittco/mcplexer/internal/store"
 )
 
 // tokenResponse is the JSON response from an OAuth2 token endpoint.

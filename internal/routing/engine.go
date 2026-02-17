@@ -5,7 +5,7 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/revitteth/mcplexer/internal/store"
+	"github.com/revittco/mcplexer/internal/store"
 )
 
 // WorkspaceAncestor pairs a workspace ID with its root path for subpath

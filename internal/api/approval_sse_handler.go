@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/revitteth/mcplexer/internal/approval"
+	"github.com/revittco/mcplexer/internal/approval"
 )
 
 type approvalSSEHandler struct {

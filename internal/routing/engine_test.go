@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/revitteth/mcplexer/internal/store"
+	"github.com/revittco/mcplexer/internal/store"
 )
 
 // mockRouteStore implements store.Store for routing engine tests.

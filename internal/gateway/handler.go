@@ -10,10 +10,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/revitteth/mcplexer/internal/approval"
-	"github.com/revitteth/mcplexer/internal/audit"
-	"github.com/revitteth/mcplexer/internal/routing"
-	"github.com/revitteth/mcplexer/internal/store"
+	"github.com/revittco/mcplexer/internal/approval"
+	"github.com/revittco/mcplexer/internal/audit"
+	"github.com/revittco/mcplexer/internal/routing"
+	"github.com/revittco/mcplexer/internal/store"
 )
 
 // ToolLister abstracts downstream tool discovery and invocation.

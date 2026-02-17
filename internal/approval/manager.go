@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/revitteth/mcplexer/internal/store"
+	"github.com/revittco/mcplexer/internal/store"
 )
 
 // resolution carries the outcome of an approval decision.

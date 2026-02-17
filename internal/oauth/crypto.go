@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/revitteth/mcplexer/internal/store"
+	"github.com/revittco/mcplexer/internal/store"
 )
 
 func (fm *FlowManager) decryptTokenData(data []byte) (*store.OAuthTokenData, error) {

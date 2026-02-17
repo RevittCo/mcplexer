@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/revitteth/mcplexer/internal/store"
+	"github.com/revittco/mcplexer/internal/store"
 )
 
 // parsedRule holds a RouteRule with pre-parsed fields for matching.

@@ -10,8 +10,8 @@ import (
 	"os"
 	"sync"
 
-	"github.com/revitteth/mcplexer/internal/gateway"
-	"github.com/revitteth/mcplexer/internal/store"
+	"github.com/revittco/mcplexer/internal/gateway"
+	"github.com/revittco/mcplexer/internal/store"
 )
 
 // Server is the MCP control server for managing MCPlexer configuration.

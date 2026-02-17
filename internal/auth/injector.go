@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/revitteth/mcplexer/internal/oauth"
-	"github.com/revitteth/mcplexer/internal/secrets"
-	"github.com/revitteth/mcplexer/internal/store"
+	"github.com/revittco/mcplexer/internal/oauth"
+	"github.com/revittco/mcplexer/internal/secrets"
+	"github.com/revittco/mcplexer/internal/store"
 )
 
 // Injector resolves credentials from the secrets manager and provides them

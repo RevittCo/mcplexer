@@ -9,8 +9,8 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
-	"github.com/revitteth/mcplexer/internal/routing"
-	"github.com/revitteth/mcplexer/internal/store"
+	"github.com/revittco/mcplexer/internal/routing"
+	"github.com/revittco/mcplexer/internal/store"
 )
 
 // TransportMode controls how the client root is determined.

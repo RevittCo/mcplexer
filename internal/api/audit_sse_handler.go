@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/revitteth/mcplexer/internal/audit"
+	"github.com/revittco/mcplexer/internal/audit"
 )
 
 type auditSSEHandler struct {

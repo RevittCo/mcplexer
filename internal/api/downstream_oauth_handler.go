@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/revitteth/mcplexer/internal/oauth"
-	"github.com/revitteth/mcplexer/internal/store"
+	"github.com/revittco/mcplexer/internal/oauth"
+	"github.com/revittco/mcplexer/internal/store"
 )
 
 type downstreamOAuthHandler struct {

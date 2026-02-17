@@ -7,8 +7,8 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/revitteth/mcplexer/internal/secrets"
-	"github.com/revitteth/mcplexer/internal/store"
+	"github.com/revittco/mcplexer/internal/secrets"
+	"github.com/revittco/mcplexer/internal/store"
 )
 
 // FlowManager orchestrates OAuth2 authorization code flows.

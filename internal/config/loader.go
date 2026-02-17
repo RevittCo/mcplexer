@@ -8,7 +8,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/revitteth/mcplexer/internal/store"
+	"github.com/revittco/mcplexer/internal/store"
 	"gopkg.in/yaml.v3"
 )
 

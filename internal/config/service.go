@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/revitteth/mcplexer/internal/store"
+	"github.com/revittco/mcplexer/internal/store"
 )
 
 // Service provides config CRUD with validation, wrapping the store.

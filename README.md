@@ -4,7 +4,7 @@ Directory-scoped MCP routing and tool control. Like [direnv](https://direnv.net)
 
 Route, scope, and secure every AI tool call based on your working directory. Local-first. Auditable. Open source.
 
-**[Website](https://revitteth.github.io/mcplexer/)** &middot; **[Issues](https://github.com/revitteth/mcplexer/issues)**
+**[Website](https://revittco.github.io/mcplexer/)** &middot; **[Issues](https://github.com/revittco/mcplexer/issues)**
 
 ## What is mcplexer?
 
@@ -54,13 +54,13 @@ mcplexer daemon start --addr=:3333 --socket=/tmp/mcplexer.sock
 ### Install
 
 ```bash
-go install github.com/revitteth/mcplexer@latest
+go install github.com/revittco/mcplexer@latest
 ```
 
 Or build from source:
 
 ```bash
-git clone https://github.com/revitteth/mcplexer.git
+git clone https://github.com/revittco/mcplexer.git
 cd mcplexer
 make build
 # Binary at ./bin/mcplexer

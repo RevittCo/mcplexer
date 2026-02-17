@@ -5,15 +5,15 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/revitteth/mcplexer/internal/approval"
-	"github.com/revitteth/mcplexer/internal/audit"
-	"github.com/revitteth/mcplexer/internal/config"
-	"github.com/revitteth/mcplexer/internal/downstream"
-	"github.com/revitteth/mcplexer/internal/oauth"
-	"github.com/revitteth/mcplexer/internal/routing"
-	"github.com/revitteth/mcplexer/internal/secrets"
-	"github.com/revitteth/mcplexer/internal/store"
-	"github.com/revitteth/mcplexer/internal/web"
+	"github.com/revittco/mcplexer/internal/approval"
+	"github.com/revittco/mcplexer/internal/audit"
+	"github.com/revittco/mcplexer/internal/config"
+	"github.com/revittco/mcplexer/internal/downstream"
+	"github.com/revittco/mcplexer/internal/oauth"
+	"github.com/revittco/mcplexer/internal/routing"
+	"github.com/revittco/mcplexer/internal/secrets"
+	"github.com/revittco/mcplexer/internal/store"
+	"github.com/revittco/mcplexer/internal/web"
 )
 
 // RouterDeps holds the dependencies needed by the HTTP API router.

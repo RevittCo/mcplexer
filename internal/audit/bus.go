@@ -3,7 +3,7 @@ package audit
 import (
 	"sync"
 
-	"github.com/revitteth/mcplexer/internal/store"
+	"github.com/revittco/mcplexer/internal/store"
 )
 
 // Bus fans out audit records to SSE subscribers in real time.

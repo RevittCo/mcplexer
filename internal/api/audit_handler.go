@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/revitteth/mcplexer/internal/store"
+	"github.com/revittco/mcplexer/internal/store"
 )
 
 type auditHandler struct {

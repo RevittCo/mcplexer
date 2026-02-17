@@ -4,8 +4,8 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/revitteth/mcplexer/internal/approval"
-	"github.com/revitteth/mcplexer/internal/store"
+	"github.com/revittco/mcplexer/internal/approval"
+	"github.com/revittco/mcplexer/internal/store"
 )
 
 type approvalHandler struct {

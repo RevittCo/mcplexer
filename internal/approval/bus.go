@@ -3,7 +3,7 @@ package approval
 import (
 	"sync"
 
-	"github.com/revitteth/mcplexer/internal/store"
+	"github.com/revittco/mcplexer/internal/store"
 )
 
 // ApprovalEvent is published when an approval is created or resolved.

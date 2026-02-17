@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/revitteth/mcplexer/internal/routing"
+	"github.com/revittco/mcplexer/internal/routing"
 )
 
 func TestIsPathAncestor(t *testing.T) {

@@ -10,11 +10,11 @@ import (
 	"os"
 	"sync"
 
-	"github.com/revitteth/mcplexer/internal/approval"
-	"github.com/revitteth/mcplexer/internal/audit"
-	"github.com/revitteth/mcplexer/internal/downstream"
-	"github.com/revitteth/mcplexer/internal/routing"
-	"github.com/revitteth/mcplexer/internal/store"
+	"github.com/revittco/mcplexer/internal/approval"
+	"github.com/revittco/mcplexer/internal/audit"
+	"github.com/revittco/mcplexer/internal/downstream"
+	"github.com/revittco/mcplexer/internal/routing"
+	"github.com/revittco/mcplexer/internal/store"
 )
 
 // Server is the MCP gateway server.

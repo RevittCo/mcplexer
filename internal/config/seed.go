@@ -6,8 +6,8 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/revitteth/mcplexer/internal/oauth"
-	"github.com/revitteth/mcplexer/internal/store"
+	"github.com/revittco/mcplexer/internal/oauth"
+	"github.com/revittco/mcplexer/internal/store"
 )
 
 // SeedDefaultOAuthProviders creates or updates OAuth provider records from

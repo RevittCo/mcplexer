@@ -6,8 +6,8 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/revitteth/mcplexer/internal/gateway"
-	"github.com/revitteth/mcplexer/internal/store"
+	"github.com/revittco/mcplexer/internal/gateway"
+	"github.com/revittco/mcplexer/internal/store"
 )
 
 func TestServerInitialize(t *testing.T) {

@@ -3,7 +3,7 @@ package control
 import (
 	"encoding/json"
 
-	"github.com/revitteth/mcplexer/internal/gateway"
+	"github.com/revittco/mcplexer/internal/gateway"
 )
 
 func allTools() []gateway.Tool {

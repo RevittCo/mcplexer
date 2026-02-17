@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/revitteth/mcplexer/internal/gateway"
-	"github.com/revitteth/mcplexer/internal/store"
+	"github.com/revittco/mcplexer/internal/gateway"
+	"github.com/revittco/mcplexer/internal/store"
 )
 
 type handlerFunc func(ctx context.Context, s store.Store, args json.RawMessage) (json.RawMessage, error)

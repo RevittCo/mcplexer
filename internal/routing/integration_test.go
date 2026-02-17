@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/revitteth/mcplexer/internal/store"
+	"github.com/revittco/mcplexer/internal/store"
 )
 
 // tm is a shorthand for creating json.RawMessage tool match arrays.
