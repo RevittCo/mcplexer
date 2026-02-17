@@ -66,6 +66,23 @@ make build
 # Binary at ./bin/mcplexer
 ```
 
+### Desktop App (Run Locally)
+
+Prebuilt Electron installers are not published anymore. Run the desktop app locally:
+
+```bash
+# from repo root
+make web-build
+make go-build
+cd electron
+npm ci
+npm run dev
+```
+
+Notes:
+- The Electron app expects the backend binary at `bin/mcplexer`.
+- `npm run dev` compiles Electron TypeScript and launches the desktop shell.
+
 ## Configuration
 
 mcplexer supports four configuration methods:

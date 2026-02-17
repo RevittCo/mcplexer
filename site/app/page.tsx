@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { config } from "@/lib/config";
-import { McplexerLogo } from "@/components/logo";
 import {
   Code,
   HardDrive,
@@ -11,13 +10,11 @@ import {
   Shield,
   CloudOff,
   ArrowRight,
-  Layers,
   Activity,
   RefreshCw,
   Lock,
   FlaskConical,
   Terminal,
-  Copy,
   Cable,
   Wrench,
   Monitor,

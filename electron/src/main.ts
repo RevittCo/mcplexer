@@ -6,6 +6,7 @@ import { getGoBinaryPath } from "./utils/go-binary.js";
 import { waitForHealth } from "./utils/health-check.js";
 import { initTray, setTrayStatus } from "./tray.js";
 import { startApprovalListener, stopApprovalListener } from "./notifications.js";
+import { createMarkIcon } from "./branding.js";
 
 let mainWindow: BrowserWindow | null = null;
 let goProcess: ChildProcess | null = null;
@@ -36,6 +37,7 @@ function createWindow(): void {
     },
     show: false,
     title: "MCPlexer",
+    icon: createMarkIcon("app", 256),
   });
 
   mainWindow.once("ready-to-show", () => {
@@ -155,6 +157,9 @@ async function startApp(): Promise<void> {
 }
 
 app.on("ready", () => {
+  if (process.platform === "darwin" && app.dock) {
+    app.dock.setIcon(createMarkIcon("app", 512));
+  }
   void startApp();
 });
 
