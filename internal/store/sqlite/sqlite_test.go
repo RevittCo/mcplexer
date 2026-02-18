@@ -237,6 +237,8 @@ func TestRouteRuleCRUD(t *testing.T) {
 		WorkspaceID:        ws.ID,
 		PathGlob:           "**",
 		ToolMatch:          json.RawMessage(`["github__*"]`),
+		AllowedOrgs:        json.RawMessage(`["acme"]`),
+		AllowedRepos:       json.RawMessage(`["acme/mcplexer"]`),
 		DownstreamServerID: ds.ID,
 		Policy:             "allow",
 		LogLevel:           "info",
@@ -252,6 +254,12 @@ func TestRouteRuleCRUD(t *testing.T) {
 	}
 	if got.Priority != 100 {
 		t.Fatalf("priority = %d", got.Priority)
+	}
+	if string(got.AllowedOrgs) != `["acme"]` {
+		t.Fatalf("allowed orgs = %s", got.AllowedOrgs)
+	}
+	if string(got.AllowedRepos) != `["acme/mcplexer"]` {
+		t.Fatalf("allowed repos = %s", got.AllowedRepos)
 	}
 
 	list, err := db.ListRouteRules(ctx, ws.ID)
@@ -328,10 +336,10 @@ func TestAuditCRUD(t *testing.T) {
 	// Insert a few records.
 	for i, name := range []string{"github__create_issue", "slack__post_message", "github__list_prs"} {
 		r := &store.AuditRecord{
-			Timestamp:  time.Now().UTC().Add(time.Duration(i) * time.Second),
-			ToolName:   name,
-			Status:     "success",
-			LatencyMs:  50 + i*10,
+			Timestamp:   time.Now().UTC().Add(time.Duration(i) * time.Second),
+			ToolName:    name,
+			Status:      "success",
+			LatencyMs:   50 + i*10,
 			WorkspaceID: "ws1",
 		}
 		if err := db.InsertAuditRecord(ctx, r); err != nil {
@@ -380,10 +388,10 @@ func TestDashboardTimeSeries(t *testing.T) {
 
 	// Insert records across 3 different minutes.
 	records := []struct {
-		offset   time.Duration
-		session  string
-		server   string
-		status   string
+		offset  time.Duration
+		session string
+		server  string
+		status  string
 	}{
 		{0 * time.Minute, "s1", "srv-a", "success"},
 		{0 * time.Minute, "s2", "srv-a", "error"},

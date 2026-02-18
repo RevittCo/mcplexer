@@ -217,6 +217,27 @@ func (h *handler) handleToolsCall(
 		return nil, rpcErr
 	}
 
+	// Optional GitHub scope enforcement from route allowlists.
+	if strings.HasPrefix(req.Name, "github__") {
+		policy, err := newGitHubScopePolicy(routeResult.AllowedOrgs, routeResult.AllowedRepos)
+		if err != nil {
+			rpcErr := &RPCError{
+				Code:    CodeInvalidParams,
+				Message: fmt.Sprintf("invalid route allowlist configuration: %v", err),
+			}
+			h.recordAudit(ctx, req.Name, req.Arguments, routeResult, nil, rpcErr, start)
+			return nil, rpcErr
+		}
+		if err := policy.Enforce(req.Arguments); err != nil {
+			rpcErr := &RPCError{
+				Code:    CodeInvalidParams,
+				Message: err.Error(),
+			}
+			h.recordAudit(ctx, req.Name, req.Arguments, routeResult, nil, rpcErr, start)
+			return nil, rpcErr
+		}
+	}
+
 	// Two-phase approval interception.
 	if routeResult.RequiresApproval && h.approvals != nil {
 		result, rpcErr := h.handleApprovalGate(ctx, req, routeResult, originalTool, start)

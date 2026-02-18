@@ -128,8 +128,30 @@ func validateRouteRules(rules []routeRuleConfig, wsIDs, dsIDs, scopeIDs map[stri
 		if err := validatePolicy(r.Policy); err != nil {
 			errs = append(errs, fmt.Sprintf("route_rules[%d]: %v", i, err))
 		}
+		for j, org := range r.AllowedOrgs {
+			if strings.TrimSpace(org) == "" {
+				errs = append(errs, fmt.Sprintf("route_rules[%d]: allowed_orgs[%d] cannot be empty", i, j))
+			}
+		}
+		for j, repo := range r.AllowedRepos {
+			if err := validateAllowedRepo(repo); err != nil {
+				errs = append(errs, fmt.Sprintf("route_rules[%d]: allowed_repos[%d]: %v", i, j, err))
+			}
+		}
 	}
 	return errs
+}
+
+func validateAllowedRepo(repo string) error {
+	repo = strings.TrimSpace(repo)
+	if repo == "" {
+		return fmt.Errorf("cannot be empty")
+	}
+	parts := strings.Split(repo, "/")
+	if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
+		return fmt.Errorf("must be in owner/repo format")
+	}
+	return nil
 }
 
 func validatePolicy(p string) error {

@@ -49,11 +49,11 @@ type OAuthProvider struct {
 
 // OAuthTokenData holds decrypted OAuth2 token information.
 type OAuthTokenData struct {
-	AccessToken  string   `json:"access_token"`
-	RefreshToken string   `json:"refresh_token"`
-	TokenType    string   `json:"token_type"`
+	AccessToken  string    `json:"access_token"`
+	RefreshToken string    `json:"refresh_token"`
+	TokenType    string    `json:"token_type"`
 	ExpiresAt    time.Time `json:"expires_at"`
-	Scopes       []string `json:"scopes,omitempty"`
+	Scopes       []string  `json:"scopes,omitempty"`
 }
 
 // DownstreamServer represents a downstream MCP server configuration.
@@ -84,6 +84,8 @@ type RouteRule struct {
 	WorkspaceID        string          `json:"workspace_id"`
 	PathGlob           string          `json:"path_glob"`
 	ToolMatch          json.RawMessage `json:"tool_match,omitempty"`
+	AllowedOrgs        json.RawMessage `json:"allowed_orgs,omitempty"`
+	AllowedRepos       json.RawMessage `json:"allowed_repos,omitempty"`
 	DownstreamServerID string          `json:"downstream_server_id"`
 	AuthScopeID        string          `json:"auth_scope_id"`
 	Policy             string          `json:"policy"`

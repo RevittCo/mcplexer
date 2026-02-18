@@ -62,15 +62,17 @@ type downstreamServerConfig struct {
 }
 
 type routeRuleConfig struct {
-	ID                 string `yaml:"id"`
-	Priority           int    `yaml:"priority"`
-	WorkspaceID        string `yaml:"workspace_id"`
-	PathGlob           string `yaml:"path_glob"`
-	ToolMatch          string `yaml:"tool_match"`
-	DownstreamServerID string `yaml:"downstream_server_id"`
-	AuthScopeID        string `yaml:"auth_scope_id"`
-	Policy             string `yaml:"policy"`
-	LogLevel           string `yaml:"log_level"`
+	ID                 string   `yaml:"id"`
+	Priority           int      `yaml:"priority"`
+	WorkspaceID        string   `yaml:"workspace_id"`
+	PathGlob           string   `yaml:"path_glob"`
+	ToolMatch          string   `yaml:"tool_match"`
+	AllowedOrgs        []string `yaml:"allowed_orgs,omitempty"`
+	AllowedRepos       []string `yaml:"allowed_repos,omitempty"`
+	DownstreamServerID string   `yaml:"downstream_server_id"`
+	AuthScopeID        string   `yaml:"auth_scope_id"`
+	Policy             string   `yaml:"policy"`
+	LogLevel           string   `yaml:"log_level"`
 }
 
 // LoadFile reads, parses, and validates a YAML config file.
@@ -236,11 +238,14 @@ func applyRouteRules(ctx context.Context, tx store.Store, items []routeRuleConfi
 	for _, r := range items {
 		yamlIDs[r.ID] = true
 		toolMatch, _ := json.Marshal([]string{r.ToolMatch})
+		allowedOrgs, _ := json.Marshal(r.AllowedOrgs)
+		allowedRepos, _ := json.Marshal(r.AllowedRepos)
 		rr := &store.RouteRule{
 			ID: r.ID, Priority: r.Priority, WorkspaceID: r.WorkspaceID,
 			PathGlob: r.PathGlob, ToolMatch: toolMatch,
+			AllowedOrgs: allowedOrgs, AllowedRepos: allowedRepos,
 			DownstreamServerID: r.DownstreamServerID,
-			AuthScopeID: r.AuthScopeID, Policy: r.Policy,
+			AuthScopeID:        r.AuthScopeID, Policy: r.Policy,
 			LogLevel: r.LogLevel, Source: "yaml",
 			UpdatedAt: time.Now().UTC(),
 		}

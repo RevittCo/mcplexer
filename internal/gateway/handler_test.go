@@ -17,6 +17,14 @@ import (
 type mockToolLister struct {
 	tools map[string]json.RawMessage
 	err   error
+
+	callCount int
+	lastCall  struct {
+		serverID    string
+		authScopeID string
+		toolName    string
+		args        json.RawMessage
+	}
 }
 
 func (m *mockToolLister) ListAllTools(_ context.Context) (map[string]json.RawMessage, error) {
@@ -33,7 +41,12 @@ func (m *mockToolLister) ListToolsForServers(_ context.Context, serverIDs []stri
 	return result, m.err
 }
 
-func (m *mockToolLister) Call(_ context.Context, _, _, _ string, _ json.RawMessage) (json.RawMessage, error) {
+func (m *mockToolLister) Call(_ context.Context, serverID, authScopeID, toolName string, args json.RawMessage) (json.RawMessage, error) {
+	m.callCount++
+	m.lastCall.serverID = serverID
+	m.lastCall.authScopeID = authScopeID
+	m.lastCall.toolName = toolName
+	m.lastCall.args = args
 	return nil, nil
 }
 
@@ -63,9 +76,13 @@ func (m *mockStore) UpdateCapabilitiesCache(_ context.Context, id string, cache 
 }
 
 // Stubs — WorkspaceStore.
-func (m *mockStore) CreateWorkspace(_ context.Context, _ *store.Workspace) error             { return nil }
-func (m *mockStore) GetWorkspace(_ context.Context, _ string) (*store.Workspace, error)      { return nil, nil }
-func (m *mockStore) GetWorkspaceByName(_ context.Context, _ string) (*store.Workspace, error) { return nil, nil }
+func (m *mockStore) CreateWorkspace(_ context.Context, _ *store.Workspace) error { return nil }
+func (m *mockStore) GetWorkspace(_ context.Context, _ string) (*store.Workspace, error) {
+	return nil, nil
+}
+func (m *mockStore) GetWorkspaceByName(_ context.Context, _ string) (*store.Workspace, error) {
+	return nil, nil
+}
 func (m *mockStore) ListWorkspaces(_ context.Context) ([]store.Workspace, error) {
 	out := make([]store.Workspace, len(m.workspaces))
 	for i, w := range m.workspaces {
@@ -77,32 +94,52 @@ func (m *mockStore) UpdateWorkspace(_ context.Context, _ *store.Workspace) error
 func (m *mockStore) DeleteWorkspace(_ context.Context, _ string) error           { return nil }
 
 // Stubs — AuthScopeStore.
-func (m *mockStore) CreateAuthScope(_ context.Context, _ *store.AuthScope) error               { return nil }
-func (m *mockStore) GetAuthScope(_ context.Context, _ string) (*store.AuthScope, error)        { return nil, nil }
-func (m *mockStore) GetAuthScopeByName(_ context.Context, _ string) (*store.AuthScope, error)  { return nil, nil }
-func (m *mockStore) ListAuthScopes(_ context.Context) ([]store.AuthScope, error)               { return nil, nil }
-func (m *mockStore) UpdateAuthScope(_ context.Context, _ *store.AuthScope) error               { return nil }
-func (m *mockStore) DeleteAuthScope(_ context.Context, _ string) error                         { return nil }
-func (m *mockStore) UpdateAuthScopeTokenData(_ context.Context, _ string, _ []byte) error      { return nil }
+func (m *mockStore) CreateAuthScope(_ context.Context, _ *store.AuthScope) error { return nil }
+func (m *mockStore) GetAuthScope(_ context.Context, _ string) (*store.AuthScope, error) {
+	return nil, nil
+}
+func (m *mockStore) GetAuthScopeByName(_ context.Context, _ string) (*store.AuthScope, error) {
+	return nil, nil
+}
+func (m *mockStore) ListAuthScopes(_ context.Context) ([]store.AuthScope, error)          { return nil, nil }
+func (m *mockStore) UpdateAuthScope(_ context.Context, _ *store.AuthScope) error          { return nil }
+func (m *mockStore) DeleteAuthScope(_ context.Context, _ string) error                    { return nil }
+func (m *mockStore) UpdateAuthScopeTokenData(_ context.Context, _ string, _ []byte) error { return nil }
 
 // Stubs — OAuthProviderStore.
-func (m *mockStore) CreateOAuthProvider(_ context.Context, _ *store.OAuthProvider) error               { return nil }
-func (m *mockStore) GetOAuthProvider(_ context.Context, _ string) (*store.OAuthProvider, error)        { return nil, nil }
-func (m *mockStore) GetOAuthProviderByName(_ context.Context, _ string) (*store.OAuthProvider, error)  { return nil, nil }
-func (m *mockStore) ListOAuthProviders(_ context.Context) ([]store.OAuthProvider, error)               { return nil, nil }
-func (m *mockStore) UpdateOAuthProvider(_ context.Context, _ *store.OAuthProvider) error               { return nil }
-func (m *mockStore) DeleteOAuthProvider(_ context.Context, _ string) error                             { return nil }
+func (m *mockStore) CreateOAuthProvider(_ context.Context, _ *store.OAuthProvider) error { return nil }
+func (m *mockStore) GetOAuthProvider(_ context.Context, _ string) (*store.OAuthProvider, error) {
+	return nil, nil
+}
+func (m *mockStore) GetOAuthProviderByName(_ context.Context, _ string) (*store.OAuthProvider, error) {
+	return nil, nil
+}
+func (m *mockStore) ListOAuthProviders(_ context.Context) ([]store.OAuthProvider, error) {
+	return nil, nil
+}
+func (m *mockStore) UpdateOAuthProvider(_ context.Context, _ *store.OAuthProvider) error { return nil }
+func (m *mockStore) DeleteOAuthProvider(_ context.Context, _ string) error               { return nil }
 
 // Stubs — DownstreamServerStore (remaining).
-func (m *mockStore) CreateDownstreamServer(_ context.Context, _ *store.DownstreamServer) error { return nil }
-func (m *mockStore) GetDownstreamServer(_ context.Context, _ string) (*store.DownstreamServer, error) { return nil, nil }
-func (m *mockStore) GetDownstreamServerByName(_ context.Context, _ string) (*store.DownstreamServer, error) { return nil, nil }
-func (m *mockStore) UpdateDownstreamServer(_ context.Context, _ *store.DownstreamServer) error { return nil }
-func (m *mockStore) DeleteDownstreamServer(_ context.Context, _ string) error                  { return nil }
+func (m *mockStore) CreateDownstreamServer(_ context.Context, _ *store.DownstreamServer) error {
+	return nil
+}
+func (m *mockStore) GetDownstreamServer(_ context.Context, _ string) (*store.DownstreamServer, error) {
+	return nil, nil
+}
+func (m *mockStore) GetDownstreamServerByName(_ context.Context, _ string) (*store.DownstreamServer, error) {
+	return nil, nil
+}
+func (m *mockStore) UpdateDownstreamServer(_ context.Context, _ *store.DownstreamServer) error {
+	return nil
+}
+func (m *mockStore) DeleteDownstreamServer(_ context.Context, _ string) error { return nil }
 
 // Stubs — RouteRuleStore.
-func (m *mockStore) CreateRouteRule(_ context.Context, _ *store.RouteRule) error        { return nil }
-func (m *mockStore) GetRouteRule(_ context.Context, _ string) (*store.RouteRule, error) { return nil, nil }
+func (m *mockStore) CreateRouteRule(_ context.Context, _ *store.RouteRule) error { return nil }
+func (m *mockStore) GetRouteRule(_ context.Context, _ string) (*store.RouteRule, error) {
+	return nil, nil
+}
 func (m *mockStore) ListRouteRules(_ context.Context, wsID string) ([]store.RouteRule, error) {
 	if m.routeRules != nil {
 		return m.routeRules[wsID], nil
@@ -132,16 +169,22 @@ func (m *mockStore) GetDashboardTimeSeries(_ context.Context, _, _ time.Time) ([
 }
 
 // Stubs — ToolApprovalStore.
-func (m *mockStore) CreateToolApproval(_ context.Context, _ *store.ToolApproval) error   { return nil }
-func (m *mockStore) GetToolApproval(_ context.Context, _ string) (*store.ToolApproval, error) { return nil, nil }
-func (m *mockStore) ListPendingApprovals(_ context.Context) ([]store.ToolApproval, error) { return nil, nil }
-func (m *mockStore) ResolveToolApproval(_ context.Context, _, _, _, _, _ string) error    { return nil }
-func (m *mockStore) ExpirePendingApprovals(_ context.Context, _ time.Time) (int, error)   { return 0, nil }
+func (m *mockStore) CreateToolApproval(_ context.Context, _ *store.ToolApproval) error { return nil }
+func (m *mockStore) GetToolApproval(_ context.Context, _ string) (*store.ToolApproval, error) {
+	return nil, nil
+}
+func (m *mockStore) ListPendingApprovals(_ context.Context) ([]store.ToolApproval, error) {
+	return nil, nil
+}
+func (m *mockStore) ResolveToolApproval(_ context.Context, _, _, _, _, _ string) error { return nil }
+func (m *mockStore) ExpirePendingApprovals(_ context.Context, _ time.Time) (int, error) {
+	return 0, nil
+}
 
 // Stubs — Store top-level.
 func (m *mockStore) Tx(_ context.Context, _ func(store.Store) error) error { return nil }
-func (m *mockStore) Ping(_ context.Context) error                         { return nil }
-func (m *mockStore) Close() error                                         { return nil }
+func (m *mockStore) Ping(_ context.Context) error                          { return nil }
+func (m *mockStore) Close() error                                          { return nil }
 
 // --- Helpers ---
 
@@ -474,6 +517,83 @@ func TestHandleToolsCall_InterceptsBuiltin(t *testing.T) {
 	}
 	if !contains(tr.Content[0].Text, "dynns__some_tool") {
 		t.Errorf("expected tool in search result, got: %s", tr.Content[0].Text)
+	}
+}
+
+func TestHandleToolsCall_GitHubRepoAllowlistBlocksDisallowedRepo(t *testing.T) {
+	lister := &mockToolLister{}
+	ms := &mockStore{
+		servers: []store.DownstreamServer{{ID: "gh", ToolNamespace: "github", Discovery: "static"}},
+		workspaces: []mockWorkspace{
+			{id: "ws-global", rootPath: "/"},
+		},
+		routeRules: map[string][]store.RouteRule{
+			"ws-global": {
+				{
+					ID: "allow-gh", WorkspaceID: "ws-global",
+					Priority: 1, PathGlob: "**", Policy: "allow",
+					ToolMatch:          json.RawMessage(`["github__*"]`),
+					DownstreamServerID: "gh",
+					AllowedRepos:       json.RawMessage(`["acme/mcplexer"]`),
+				},
+			},
+		},
+	}
+
+	h := newHandler(ms, routing.NewEngine(ms), lister, nil, TransportSocket, nil)
+	h.sessions.clientPath = "/test"
+	h.sessions.wsChain = []routing.WorkspaceAncestor{{ID: "ws-global", RootPath: "/"}}
+
+	params, _ := json.Marshal(CallToolRequest{
+		Name:      "github__create_issue",
+		Arguments: json.RawMessage(`{"owner":"evilco","repo":"private-repo"}`),
+	})
+	_, rpcErr := h.handleToolsCall(context.Background(), params)
+	if rpcErr == nil {
+		t.Fatal("expected route policy error")
+	}
+	if rpcErr.Code != CodeInvalidParams {
+		t.Fatalf("code = %d, want %d", rpcErr.Code, CodeInvalidParams)
+	}
+	if lister.callCount != 0 {
+		t.Fatalf("downstream call count = %d, want 0", lister.callCount)
+	}
+}
+
+func TestHandleToolsCall_GitHubRepoAllowlistAllowsConfiguredRepo(t *testing.T) {
+	lister := &mockToolLister{}
+	ms := &mockStore{
+		servers: []store.DownstreamServer{{ID: "gh", ToolNamespace: "github", Discovery: "static"}},
+		workspaces: []mockWorkspace{
+			{id: "ws-global", rootPath: "/"},
+		},
+		routeRules: map[string][]store.RouteRule{
+			"ws-global": {
+				{
+					ID: "allow-gh", WorkspaceID: "ws-global",
+					Priority: 1, PathGlob: "**", Policy: "allow",
+					ToolMatch:          json.RawMessage(`["github__*"]`),
+					DownstreamServerID: "gh",
+					AllowedRepos:       json.RawMessage(`["acme/mcplexer"]`),
+				},
+			},
+		},
+	}
+
+	h := newHandler(ms, routing.NewEngine(ms), lister, nil, TransportSocket, nil)
+	h.sessions.clientPath = "/test"
+	h.sessions.wsChain = []routing.WorkspaceAncestor{{ID: "ws-global", RootPath: "/"}}
+
+	params, _ := json.Marshal(CallToolRequest{
+		Name:      "github__create_issue",
+		Arguments: json.RawMessage(`{"owner":"acme","repo":"mcplexer"}`),
+	})
+	_, rpcErr := h.handleToolsCall(context.Background(), params)
+	if rpcErr != nil {
+		t.Fatalf("unexpected error: code=%d msg=%s", rpcErr.Code, rpcErr.Message)
+	}
+	if lister.callCount != 1 {
+		t.Fatalf("downstream call count = %d, want 1", lister.callCount)
 	}
 }
 

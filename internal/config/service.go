@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/revittco/mcplexer/internal/store"
@@ -223,6 +224,12 @@ func (s *Service) validateRouteRefs(ctx context.Context, r *store.RouteRule) err
 	if err := validateToolMatch(r.ToolMatch); err != nil {
 		return err
 	}
+	if err := validateStringArray(r.AllowedOrgs, "allowed_orgs", nil); err != nil {
+		return err
+	}
+	if err := validateStringArray(r.AllowedRepos, "allowed_repos", validateAllowedRepoEntry); err != nil {
+		return err
+	}
 	return validatePolicy(r.Policy)
 }
 
@@ -239,6 +246,35 @@ func validateToolMatch(raw json.RawMessage) error {
 		if s == "" {
 			return fmt.Errorf("tool_match[%d]: empty string not allowed", i)
 		}
+	}
+	return nil
+}
+
+func validateStringArray(raw json.RawMessage, field string, entryValidator func(string) error) error {
+	if len(raw) == 0 {
+		return nil
+	}
+	var arr []string
+	if err := json.Unmarshal(raw, &arr); err != nil {
+		return fmt.Errorf("%s must be a JSON array of strings", field)
+	}
+	for i, v := range arr {
+		if strings.TrimSpace(v) == "" {
+			return fmt.Errorf("%s[%d]: empty string not allowed", field, i)
+		}
+		if entryValidator != nil {
+			if err := entryValidator(v); err != nil {
+				return fmt.Errorf("%s[%d]: %w", field, i, err)
+			}
+		}
+	}
+	return nil
+}
+
+func validateAllowedRepoEntry(v string) error {
+	parts := strings.Split(strings.TrimSpace(v), "/")
+	if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
+		return fmt.Errorf("must be in owner/repo format")
 	}
 	return nil
 }

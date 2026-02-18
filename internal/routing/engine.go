@@ -2,6 +2,7 @@ package routing
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 
@@ -28,6 +29,8 @@ type RouteResult struct {
 	AuthScopeID        string
 	MatchedRuleID      string
 	OriginalToolName   string
+	AllowedOrgs        json.RawMessage
+	AllowedRepos       json.RawMessage
 	RequiresApproval   bool
 	ApprovalTimeout    int
 }
@@ -187,6 +190,8 @@ func matchRoute(rules []parsedRule, rc RouteContext) (*RouteResult, error) {
 			AuthScopeID:        r.AuthScopeID,
 			MatchedRuleID:      r.ID,
 			OriginalToolName:   rc.ToolName,
+			AllowedOrgs:        r.AllowedOrgs,
+			AllowedRepos:       r.AllowedRepos,
 			RequiresApproval:   r.RequiresApproval,
 			ApprovalTimeout:    r.ApprovalTimeout,
 		}, nil
