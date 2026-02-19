@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -164,7 +164,26 @@ export function DashboardPage() {
   const asName = (id: string) => authScopes?.find((a) => a.id === id)?.name ?? id
 
   const { records: liveRecords, connected } = useAuditStream({})
-  const recentErrors = liveRecords.filter((r) => r.status === 'error')
+
+  // Merge DB-backed recent calls with live SSE records. The REST API returns
+  // historical data from the shared DB (works cross-process); SSE only has
+  // records from this HTTP instance's in-memory bus.
+  const recentCalls = useMemo(() => {
+    const dbRecords = data?.recent_calls ?? []
+    const seen = new Set(liveRecords.map((r) => r.id))
+    const merged = [...liveRecords, ...dbRecords.filter((r) => !seen.has(r.id))]
+    merged.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+    return merged.slice(0, 50)
+  }, [liveRecords, data?.recent_calls])
+
+  const recentErrors = useMemo(() => {
+    const dbErrors = (data?.recent_errors ?? [])
+    const seen = new Set(liveRecords.map((r) => r.id))
+    const liveErrors = liveRecords.filter((r) => r.status === 'error')
+    const merged = [...liveErrors, ...dbErrors.filter((r) => !seen.has(r.id))]
+    merged.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+    return merged.slice(0, 20)
+  }, [liveRecords, data?.recent_errors])
 
   const { pending: pendingApprovals } = useApprovalStream()
 
@@ -270,7 +289,7 @@ export function DashboardPage() {
           </div>
         </CardHeader>
         <CardContent>
-          {liveRecords.length === 0 ? (
+          {recentCalls.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
               <Terminal className="mb-3 h-8 w-8 text-muted-foreground/50" />
               <p className="font-mono text-sm">
@@ -296,7 +315,7 @@ export function DashboardPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {liveRecords.map((call, idx) => (
+                {recentCalls.map((call, idx) => (
                   <TableRow
                     key={call.id}
                     className={`cursor-pointer border-border/30 hover:bg-muted/30 ${
