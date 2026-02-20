@@ -89,6 +89,19 @@ func (s *Service) UpdateRouteRule(ctx context.Context, r *store.RouteRule) error
 	return s.store.UpdateRouteRule(ctx, r)
 }
 
+// BulkCreateRouteRules validates and creates multiple route rules atomically.
+func (s *Service) BulkCreateRouteRules(ctx context.Context, rules []store.RouteRule) error {
+	return s.store.Tx(ctx, func(txStore store.Store) error {
+		svc := NewService(txStore)
+		for i := range rules {
+			if err := svc.CreateRouteRule(ctx, &rules[i]); err != nil {
+				return fmt.Errorf("rule[%d] %q: %w", i, rules[i].Name, err)
+			}
+		}
+		return nil
+	})
+}
+
 // CreateOAuthProvider validates and creates an OAuth provider.
 func (s *Service) CreateOAuthProvider(ctx context.Context, p *store.OAuthProvider) error {
 	now := time.Now().UTC()
@@ -117,58 +130,14 @@ func (s *Service) UpdateAuthScope(ctx context.Context, a *store.AuthScope) error
 	return s.store.UpdateAuthScope(ctx, a)
 }
 
-// Export serializes the current store config to a FileConfig for YAML export.
+// Export serializes the current downstream servers to a FileConfig for YAML export.
 func (s *Service) Export(ctx context.Context) (*FileConfig, error) {
-	providers, err := s.store.ListOAuthProviders(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("list oauth providers: %w", err)
-	}
-	workspaces, err := s.store.ListWorkspaces(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("list workspaces: %w", err)
-	}
-	scopes, err := s.store.ListAuthScopes(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("list auth scopes: %w", err)
-	}
 	downstreams, err := s.store.ListDownstreamServers(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list downstreams: %w", err)
 	}
 
 	cfg := &FileConfig{}
-	for _, p := range providers {
-		var scps []string
-		if len(p.Scopes) > 0 {
-			_ = json.Unmarshal(p.Scopes, &scps)
-		}
-		cfg.OAuthProviders = append(cfg.OAuthProviders, oauthProviderConfig{
-			ID: p.ID, Name: p.Name,
-			AuthorizeURL: p.AuthorizeURL, TokenURL: p.TokenURL,
-			ClientID: p.ClientID, Scopes: scps, UsePKCE: p.UsePKCE,
-		})
-	}
-	for _, w := range workspaces {
-		var tags []string
-		if len(w.Tags) > 0 {
-			_ = json.Unmarshal(w.Tags, &tags)
-		}
-		cfg.Workspaces = append(cfg.Workspaces, workspaceConfig{
-			ID: w.ID, Name: w.Name, RootPath: w.RootPath,
-			Tags: tags, DefaultPolicy: w.DefaultPolicy,
-		})
-	}
-	for _, a := range scopes {
-		var hints []string
-		if len(a.RedactionHints) > 0 {
-			_ = json.Unmarshal(a.RedactionHints, &hints)
-		}
-		cfg.AuthScopes = append(cfg.AuthScopes, authScopeConfig{
-			ID: a.ID, Name: a.Name, Type: a.Type,
-			OAuthProviderID: a.OAuthProviderID,
-			RedactionHints:  hints,
-		})
-	}
 	for _, d := range downstreams {
 		var args []string
 		if len(d.Args) > 0 {

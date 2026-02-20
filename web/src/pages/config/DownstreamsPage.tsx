@@ -36,7 +36,9 @@ import {
 } from '@/api/client'
 import type { DownstreamOAuthStatusEntry, DownstreamServer } from '@/api/types'
 import { ConnectDialog } from './ConnectDialog'
-import { AlertCircle, Clock, Copy, Link, Pause, Pencil, Play, Plus, Server, Trash2 } from 'lucide-react'
+import type { ServerCacheConfig } from '@/api/types'
+import { Checkbox } from '@/components/ui/checkbox'
+import { AlertCircle, ChevronDown, ChevronRight, Clock, Copy, Link, Pause, Pencil, Play, Plus, Server, Trash2 } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
@@ -52,6 +54,7 @@ interface FormData {
   max_instances: number
   restart_policy: string
   disabled: boolean
+  cache_config?: ServerCacheConfig
 }
 
 const emptyForm: FormData = {
@@ -184,6 +187,7 @@ export function DownstreamsPage() {
       max_instances: ds.max_instances,
       restart_policy: ds.restart_policy,
       disabled: false,
+      cache_config: ds.cache_config ? { ...ds.cache_config } : undefined,
     })
     setSaveError(null)
     setDialogOpen(true)
@@ -202,6 +206,7 @@ export function DownstreamsPage() {
       max_instances: ds.max_instances,
       restart_policy: ds.restart_policy,
       disabled: ds.disabled,
+      cache_config: ds.cache_config ? { ...ds.cache_config } : undefined,
     })
     setSaveError(null)
     setDialogOpen(true)
@@ -463,6 +468,26 @@ function DownstreamDialog({
   editing: boolean
   saveError: string | null
 }) {
+  const [showCaching, setShowCaching] = useState(false)
+
+  const cacheEnabled = form.cache_config?.enabled ?? true
+  const cacheTTL = form.cache_config?.read_ttl_sec ?? 1800
+  const cacheMaxEntries = form.cache_config?.max_entries ?? 1000
+
+  function updateCache(patch: Partial<ServerCacheConfig>) {
+    setForm((f) => ({
+      ...f,
+      cache_config: { ...f.cache_config, ...patch },
+    }))
+  }
+
+  function formatTTLHint(sec: number): string {
+    if (sec === 0) return 'indefinite'
+    if (sec < 60) return `${sec}s`
+    if (sec < 3600) return `${Math.round(sec / 60)}m`
+    return `${(sec / 3600).toFixed(1)}h`
+  }
+
   return (
     <Dialog open={open} onOpenChange={() => onClose()}>
       <DialogContent>
@@ -572,6 +597,60 @@ function DownstreamDialog({
               />
             </div>
           </div>
+
+          <button
+            type="button"
+            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            onClick={() => setShowCaching(!showCaching)}
+          >
+            {showCaching ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+            Caching
+            {!showCaching && (
+              <span className="text-muted-foreground/60">
+                — {cacheEnabled ? `${formatTTLHint(cacheTTL)} TTL` : 'disabled'}
+              </span>
+            )}
+          </button>
+
+          {showCaching && (
+            <div className="space-y-3 rounded-md border border-border/50 p-3">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <Checkbox
+                  checked={cacheEnabled}
+                  onCheckedChange={(checked) => updateCache({ enabled: checked === true })}
+                />
+                <span className="text-sm">Enable caching</span>
+              </label>
+
+              {cacheEnabled && (
+                <>
+                  <div className="space-y-2">
+                    <Label className="text-xs text-muted-foreground">TTL (seconds)</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={cacheTTL}
+                      onChange={(e) => updateCache({ read_ttl_sec: Number(e.target.value) })}
+                      className="w-32"
+                    />
+                    <p className="text-xs text-muted-foreground/60">
+                      0 = indefinite. Default is 1800 (30 min).
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-xs text-muted-foreground">Max Entries</Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      value={cacheMaxEntries}
+                      onChange={(e) => updateCache({ max_entries: Number(e.target.value) })}
+                      className="w-32"
+                    />
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </div>
         {saveError && (
           <p className="text-sm text-destructive">{saveError}</p>

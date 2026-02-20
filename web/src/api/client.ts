@@ -249,6 +249,15 @@ export function deleteRoute(id: string): Promise<void> {
   return request(`/routes/${id}`, { method: 'DELETE' })
 }
 
+export function bulkCreateRoutes(
+  rules: Omit<RouteRule, 'id' | 'created_at' | 'updated_at'>[],
+): Promise<RouteRule[]> {
+  return request('/routes/bulk', {
+    method: 'POST',
+    body: JSON.stringify(rules),
+  })
+}
+
 // Audit
 export function queryAuditLogs(
   filter: AuditFilter,
@@ -265,8 +274,9 @@ export function queryAuditLogs(
 }
 
 // Dashboard
-export function getDashboard(): Promise<DashboardData> {
-  return request('/dashboard')
+export function getDashboard(range_?: string): Promise<DashboardData> {
+  const params = range_ ? `?range=${range_}` : ''
+  return request(`/dashboard${params}`)
 }
 
 // Discover Tools

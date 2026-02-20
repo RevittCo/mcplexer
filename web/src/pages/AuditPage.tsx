@@ -118,13 +118,14 @@ export function AuditPage() {
                 <TableHead className="hidden md:table-cell">Workspace</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Reason</TableHead>
+                <TableHead className="hidden lg:table-cell">Cache</TableHead>
                 <TableHead className="hidden sm:table-cell text-right">Latency</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {allRecords.length === 0 && !loading ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="h-32">
+                  <TableCell colSpan={7} className="h-32">
                     <div className="flex flex-col items-center justify-center text-muted-foreground">
                       <Radio className="mb-2 h-8 w-8 text-muted-foreground/50" />
                       <p className="text-sm">Waiting for events...</p>
@@ -154,7 +155,7 @@ export function AuditPage() {
                         </div>
                       </TableCell>
                       <TableCell className="hidden md:table-cell text-muted-foreground">
-                        {record.workspace_id ? wsName(record.workspace_id) : '-'}
+                        {record.workspace_name || (record.workspace_id ? wsName(record.workspace_id) : '-')}
                       </TableCell>
                       <TableCell>
                         <Badge variant={record.status === 'success' ? 'secondary' : 'destructive'}>
@@ -163,6 +164,13 @@ export function AuditPage() {
                       </TableCell>
                       <TableCell>
                         <ReasonBadge record={record} />
+                      </TableCell>
+                      <TableCell className="hidden lg:table-cell">
+                        {record.cache_hit && (
+                          <Badge variant="outline" className="border-blue-500/40 text-blue-400">
+                            cached
+                          </Badge>
+                        )}
                       </TableCell>
                       <TableCell className="hidden sm:table-cell text-right font-mono text-sm text-muted-foreground">
                         {record.latency_ms}ms

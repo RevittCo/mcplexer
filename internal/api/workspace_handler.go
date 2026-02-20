@@ -5,12 +5,14 @@ import (
 	"net/http"
 
 	"github.com/revittco/mcplexer/internal/config"
+	"github.com/revittco/mcplexer/internal/routing"
 	"github.com/revittco/mcplexer/internal/store"
 )
 
 type workspaceHandler struct {
-	svc   *config.Service
-	store store.WorkspaceStore
+	svc    *config.Service
+	store  store.WorkspaceStore
+	engine *routing.Engine // optional; invalidates route cache on mutations
 }
 
 func (h *workspaceHandler) list(w http.ResponseWriter, r *http.Request) {
@@ -53,6 +55,9 @@ func (h *workspaceHandler) create(w http.ResponseWriter, r *http.Request) {
 		writeErrorDetail(w, http.StatusBadRequest, "failed to create workspace", err.Error())
 		return
 	}
+	if h.engine != nil {
+		h.engine.InvalidateAllRoutes()
+	}
 	writeJSON(w, http.StatusCreated, ws)
 }
 
@@ -86,6 +91,9 @@ func (h *workspaceHandler) update(w http.ResponseWriter, r *http.Request) {
 		writeErrorDetail(w, http.StatusBadRequest, "failed to update workspace", err.Error())
 		return
 	}
+	if h.engine != nil {
+		h.engine.InvalidateAllRoutes()
+	}
 	writeJSON(w, http.StatusOK, ws)
 }
 
@@ -98,6 +106,9 @@ func (h *workspaceHandler) delete(w http.ResponseWriter, r *http.Request) {
 		}
 		writeError(w, http.StatusInternalServerError, "failed to delete workspace")
 		return
+	}
+	if h.engine != nil {
+		h.engine.InvalidateAllRoutes()
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

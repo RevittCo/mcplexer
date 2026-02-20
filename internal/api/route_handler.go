@@ -5,12 +5,14 @@ import (
 	"net/http"
 
 	"github.com/revittco/mcplexer/internal/config"
+	"github.com/revittco/mcplexer/internal/routing"
 	"github.com/revittco/mcplexer/internal/store"
 )
 
 type routeHandler struct {
-	svc   *config.Service
-	store store.RouteRuleStore
+	svc    *config.Service
+	store  store.RouteRuleStore
+	engine *routing.Engine // optional; invalidates route cache on mutations
 }
 
 func (h *routeHandler) list(w http.ResponseWriter, r *http.Request) {
@@ -40,6 +42,30 @@ func (h *routeHandler) get(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, rule)
 }
 
+func (h *routeHandler) bulkCreate(w http.ResponseWriter, r *http.Request) {
+	var rules []store.RouteRule
+	if err := decodeJSON(r, &rules); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if len(rules) == 0 {
+		writeError(w, http.StatusBadRequest, "empty rules array")
+		return
+	}
+	if len(rules) > 50 {
+		writeError(w, http.StatusBadRequest, "too many rules (max 50)")
+		return
+	}
+	if err := h.svc.BulkCreateRouteRules(r.Context(), rules); err != nil {
+		writeErrorDetail(w, http.StatusBadRequest, "failed to create route rules", err.Error())
+		return
+	}
+	if h.engine != nil {
+		h.engine.InvalidateAllRoutes()
+	}
+	writeJSON(w, http.StatusCreated, rules)
+}
+
 func (h *routeHandler) create(w http.ResponseWriter, r *http.Request) {
 	var rr store.RouteRule
 	if err := decodeJSON(r, &rr); err != nil {
@@ -53,6 +79,9 @@ func (h *routeHandler) create(w http.ResponseWriter, r *http.Request) {
 		}
 		writeErrorDetail(w, http.StatusBadRequest, "failed to create route rule", err.Error())
 		return
+	}
+	if h.engine != nil {
+		h.engine.InvalidateAllRoutes()
 	}
 	writeJSON(w, http.StatusCreated, rr)
 }
@@ -88,6 +117,9 @@ func (h *routeHandler) update(w http.ResponseWriter, r *http.Request) {
 		writeErrorDetail(w, http.StatusBadRequest, "failed to update route rule", err.Error())
 		return
 	}
+	if h.engine != nil {
+		h.engine.InvalidateAllRoutes()
+	}
 	writeJSON(w, http.StatusOK, rr)
 }
 
@@ -100,6 +132,9 @@ func (h *routeHandler) delete(w http.ResponseWriter, r *http.Request) {
 		}
 		writeError(w, http.StatusInternalServerError, "failed to delete route rule")
 		return
+	}
+	if h.engine != nil {
+		h.engine.InvalidateAllRoutes()
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

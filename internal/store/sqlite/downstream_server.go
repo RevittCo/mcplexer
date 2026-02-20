@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -21,6 +22,7 @@ func (d *DB) CreateDownstreamServer(ctx context.Context, ds *store.DownstreamSer
 
 	args := normalizeJSON(ds.Args, "[]")
 	caps := normalizeJSON(ds.CapabilitiesCache, "{}")
+	cacheCfg := normalizeJSON(ds.CacheConfig, "{}")
 
 	if ds.Discovery == "" {
 		ds.Discovery = "static"
@@ -32,12 +34,13 @@ func (d *DB) CreateDownstreamServer(ctx context.Context, ds *store.DownstreamSer
 	_, err := d.q.ExecContext(ctx, `
 		INSERT INTO downstream_servers
 			(id, name, transport, command, args, url, tool_namespace, discovery,
-			 capabilities_cache, idle_timeout_sec, max_instances, restart_policy,
-			 disabled, source, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			 capabilities_cache, cache_config, idle_timeout_sec, max_instances,
+			 restart_policy, disabled, source, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		ds.ID, ds.Name, ds.Transport, ds.Command, args, ds.URL,
-		ds.ToolNamespace, ds.Discovery, caps, ds.IdleTimeoutSec, ds.MaxInstances,
-		ds.RestartPolicy, ds.Disabled, ds.Source, formatTime(ds.CreatedAt), formatTime(ds.UpdatedAt),
+		ds.ToolNamespace, ds.Discovery, caps, cacheCfg, ds.IdleTimeoutSec,
+		ds.MaxInstances, ds.RestartPolicy, ds.Disabled, ds.Source,
+		formatTime(ds.CreatedAt), formatTime(ds.UpdatedAt),
 	)
 	if err != nil {
 		return mapConstraintError(err)
@@ -48,8 +51,8 @@ func (d *DB) CreateDownstreamServer(ctx context.Context, ds *store.DownstreamSer
 func (d *DB) GetDownstreamServer(ctx context.Context, id string) (*store.DownstreamServer, error) {
 	row := d.q.QueryRowContext(ctx, `
 		SELECT id, name, transport, command, args, url, tool_namespace, discovery,
-		       capabilities_cache, idle_timeout_sec, max_instances, restart_policy,
-		       disabled, source, created_at, updated_at
+		       capabilities_cache, cache_config, idle_timeout_sec, max_instances,
+		       restart_policy, disabled, source, created_at, updated_at
 		FROM downstream_servers WHERE id = ?`, id)
 	return scanDownstreamServer(row)
 }
@@ -57,8 +60,8 @@ func (d *DB) GetDownstreamServer(ctx context.Context, id string) (*store.Downstr
 func (d *DB) GetDownstreamServerByName(ctx context.Context, name string) (*store.DownstreamServer, error) {
 	row := d.q.QueryRowContext(ctx, `
 		SELECT id, name, transport, command, args, url, tool_namespace, discovery,
-		       capabilities_cache, idle_timeout_sec, max_instances, restart_policy,
-		       disabled, source, created_at, updated_at
+		       capabilities_cache, cache_config, idle_timeout_sec, max_instances,
+		       restart_policy, disabled, source, created_at, updated_at
 		FROM downstream_servers WHERE name = ?`, name)
 	return scanDownstreamServer(row)
 }
@@ -66,8 +69,8 @@ func (d *DB) GetDownstreamServerByName(ctx context.Context, name string) (*store
 func (d *DB) ListDownstreamServers(ctx context.Context) ([]store.DownstreamServer, error) {
 	rows, err := d.q.QueryContext(ctx, `
 		SELECT id, name, transport, command, args, url, tool_namespace, discovery,
-		       capabilities_cache, idle_timeout_sec, max_instances, restart_policy,
-		       disabled, source, created_at, updated_at
+		       capabilities_cache, cache_config, idle_timeout_sec, max_instances,
+		       restart_policy, disabled, source, created_at, updated_at
 		FROM downstream_servers ORDER BY name`)
 	if err != nil {
 		return nil, err
@@ -89,6 +92,7 @@ func (d *DB) UpdateDownstreamServer(ctx context.Context, ds *store.DownstreamSer
 	ds.UpdatedAt = time.Now().UTC()
 	args := normalizeJSON(ds.Args, "[]")
 	caps := normalizeJSON(ds.CapabilitiesCache, "{}")
+	cacheCfg := normalizeJSON(ds.CacheConfig, "{}")
 	if ds.Source == "" {
 		ds.Source = "api"
 	}
@@ -97,11 +101,11 @@ func (d *DB) UpdateDownstreamServer(ctx context.Context, ds *store.DownstreamSer
 		UPDATE downstream_servers
 		SET name = ?, transport = ?, command = ?, args = ?, url = ?,
 		    tool_namespace = ?, discovery = ?, capabilities_cache = ?,
-		    idle_timeout_sec = ?, max_instances = ?, restart_policy = ?,
-		    disabled = ?, source = ?, updated_at = ?
+		    cache_config = ?, idle_timeout_sec = ?, max_instances = ?,
+		    restart_policy = ?, disabled = ?, source = ?, updated_at = ?
 		WHERE id = ?`,
 		ds.Name, ds.Transport, ds.Command, args, ds.URL,
-		ds.ToolNamespace, ds.Discovery, caps,
+		ds.ToolNamespace, ds.Discovery, caps, cacheCfg,
 		ds.IdleTimeoutSec, ds.MaxInstances, ds.RestartPolicy,
 		ds.Disabled, ds.Source, formatTime(ds.UpdatedAt), ds.ID,
 	)
@@ -112,11 +116,23 @@ func (d *DB) UpdateDownstreamServer(ctx context.Context, ds *store.DownstreamSer
 }
 
 func (d *DB) DeleteDownstreamServer(ctx context.Context, id string) error {
-	res, err := d.q.ExecContext(ctx, `DELETE FROM downstream_servers WHERE id = ?`, id)
-	if err != nil {
-		return err
-	}
-	return checkRowsAffected(res)
+	return d.withTx(ctx, func(q queryable) error {
+		if _, err := q.ExecContext(ctx,
+			`DELETE FROM route_rules WHERE downstream_server_id = ?`, id); err != nil {
+			return fmt.Errorf("cascade delete route_rules: %w", err)
+		}
+		if _, err := q.ExecContext(ctx,
+			`UPDATE tool_approvals SET status = 'cancelled', resolved_at = ?
+			 WHERE downstream_server_id = ? AND status = 'pending'`,
+			formatTime(time.Now().UTC()), id); err != nil {
+			return fmt.Errorf("cascade cancel tool_approvals: %w", err)
+		}
+		res, err := q.ExecContext(ctx, `DELETE FROM downstream_servers WHERE id = ?`, id)
+		if err != nil {
+			return err
+		}
+		return checkRowsAffected(res)
+	})
 }
 
 func (d *DB) UpdateCapabilitiesCache(
@@ -136,10 +152,10 @@ func (d *DB) UpdateCapabilitiesCache(
 
 func scanDownstreamServer(row *sql.Row) (*store.DownstreamServer, error) {
 	var ds store.DownstreamServer
-	var createdAt, updatedAt, args, caps string
+	var createdAt, updatedAt, args, caps, cacheCfg string
 	err := row.Scan(
 		&ds.ID, &ds.Name, &ds.Transport, &ds.Command, &args,
-		&ds.URL, &ds.ToolNamespace, &ds.Discovery, &caps,
+		&ds.URL, &ds.ToolNamespace, &ds.Discovery, &caps, &cacheCfg,
 		&ds.IdleTimeoutSec, &ds.MaxInstances, &ds.RestartPolicy,
 		&ds.Disabled, &ds.Source, &createdAt, &updatedAt,
 	)
@@ -151,6 +167,7 @@ func scanDownstreamServer(row *sql.Row) (*store.DownstreamServer, error) {
 	}
 	ds.Args = json.RawMessage(args)
 	ds.CapabilitiesCache = json.RawMessage(caps)
+	ds.CacheConfig = json.RawMessage(cacheCfg)
 	ds.CreatedAt = parseTime(createdAt)
 	ds.UpdatedAt = parseTime(updatedAt)
 	return &ds, nil
@@ -158,10 +175,10 @@ func scanDownstreamServer(row *sql.Row) (*store.DownstreamServer, error) {
 
 func scanDownstreamServerRow(row rowScanner) (*store.DownstreamServer, error) {
 	var ds store.DownstreamServer
-	var createdAt, updatedAt, args, caps string
+	var createdAt, updatedAt, args, caps, cacheCfg string
 	err := row.Scan(
 		&ds.ID, &ds.Name, &ds.Transport, &ds.Command, &args,
-		&ds.URL, &ds.ToolNamespace, &ds.Discovery, &caps,
+		&ds.URL, &ds.ToolNamespace, &ds.Discovery, &caps, &cacheCfg,
 		&ds.IdleTimeoutSec, &ds.MaxInstances, &ds.RestartPolicy,
 		&ds.Disabled, &ds.Source, &createdAt, &updatedAt,
 	)
@@ -170,6 +187,7 @@ func scanDownstreamServerRow(row rowScanner) (*store.DownstreamServer, error) {
 	}
 	ds.Args = json.RawMessage(args)
 	ds.CapabilitiesCache = json.RawMessage(caps)
+	ds.CacheConfig = json.RawMessage(cacheCfg)
 	ds.CreatedAt = parseTime(createdAt)
 	ds.UpdatedAt = parseTime(updatedAt)
 	return &ds, nil

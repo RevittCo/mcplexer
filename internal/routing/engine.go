@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"time"
 
+	"github.com/revittco/mcplexer/internal/cache"
 	"github.com/revittco/mcplexer/internal/store"
 )
 
@@ -13,6 +15,7 @@ import (
 // computation during routing.
 type WorkspaceAncestor struct {
 	ID       string
+	Name     string
 	RootPath string
 }
 
@@ -33,6 +36,11 @@ type RouteResult struct {
 	AllowedRepos       json.RawMessage
 	RequiresApproval   bool
 	ApprovalTimeout    int
+
+	// Set by RouteWithFallback to record which workspace and subpath matched.
+	MatchedWorkspaceID   string
+	MatchedWorkspaceName string
+	Subpath              string
 }
 
 var (
@@ -59,26 +67,50 @@ func (e *DeniedError) Unwrap() error {
 
 // Engine resolves tool calls to downstream servers via route rules.
 type Engine struct {
-	store store.Store
+	store      store.Store
+	rulesCache *cache.Cache[string, []parsedRule]
 }
 
 // NewEngine creates a new routing engine.
 func NewEngine(s store.Store) *Engine {
-	return &Engine{store: s}
+	return &Engine{
+		store:      s,
+		rulesCache: cache.New[string, []parsedRule](100, 30*time.Second),
+	}
 }
 
 // Route finds the best matching route for the given context.
 func (e *Engine) Route(ctx context.Context, rc RouteContext) (*RouteResult, error) {
-	rules, err := e.store.ListRouteRules(ctx, rc.WorkspaceID)
+	parsed, err := e.rulesCache.GetOrLoad(rc.WorkspaceID, func() ([]parsedRule, error) {
+		rules, err := e.store.ListRouteRules(ctx, rc.WorkspaceID)
+		if err != nil {
+			return nil, err
+		}
+		p := parseRules(rules)
+		e.resolveNamespaces(ctx, p)
+		sortRules(p)
+		return p, nil
+	})
 	if err != nil {
 		return nil, err
 	}
 
-	parsed := parseRules(rules)
-	e.resolveNamespaces(ctx, parsed)
-	sortRules(parsed)
-
 	return matchRoute(parsed, rc)
+}
+
+// InvalidateWorkspace removes cached rules for a specific workspace.
+func (e *Engine) InvalidateWorkspace(workspaceID string) {
+	e.rulesCache.Invalidate(workspaceID)
+}
+
+// InvalidateAllRoutes removes all cached route rules.
+func (e *Engine) InvalidateAllRoutes() {
+	e.rulesCache.Flush()
+}
+
+// RouteStats returns cache statistics for route resolution.
+func (e *Engine) RouteStats() cache.Stats {
+	return e.rulesCache.Stats()
 }
 
 // resolveNamespaces looks up the tool_namespace for each rule's downstream
@@ -123,6 +155,9 @@ func (e *Engine) RouteWithFallback(ctx context.Context, rc RouteContext, clientR
 		rc.Subpath = ComputeSubpath(clientRoot, ws.RootPath)
 		result, err := e.Route(ctx, rc)
 		if err == nil {
+			result.MatchedWorkspaceID = ws.ID
+			result.MatchedWorkspaceName = ws.Name
+			result.Subpath = rc.Subpath
 			return result, nil
 		}
 		if errors.Is(err, ErrDenied) {

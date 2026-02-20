@@ -1,0 +1,130 @@
+import { Callout } from "@/components/docs/callout";
+import { TerminalBlock } from "@/components/docs/terminal-block";
+import { PropTable } from "@/components/docs/prop-table";
+import { PrevNextNav } from "@/components/docs/prev-next-nav";
+
+# Workspaces
+
+A **workspace** is a directory-bound security context. It ties a filesystem path to a set of routing rules, a default access policy, and optional metadata tags. Every tool call in MCPlexer is evaluated within the context of a workspace.
+
+## How Workspaces Work
+
+When a client connects, MCPlexer determines the active workspace by matching the client's working directory against workspace `root_path` values. The **longest prefix match** wins — if your CWD is `/home/user/projects/acme/api`, and you have workspaces rooted at `/home/user/projects` and `/home/user/projects/acme`, the latter is selected.
+
+This lets you define broad policies at a high level and override them for specific project directories.
+
+## Workspace Fields
+
+<PropTable props={[
+  { name: "id", type: "string", description: "Unique identifier (auto-generated or user-provided)" },
+  { name: "name", type: "string", description: "Human-readable display name" },
+  { name: "root_path", type: "string", description: "Filesystem path this workspace covers. Longest prefix match determines the active workspace." },
+  { name: "default_policy", type: "\"allow\" | \"deny\"", default: "\"allow\"", description: "Fallback policy when no route rule matches a tool call" },
+  { name: "tags", type: "object", description: "Arbitrary key-value metadata for filtering and organization" },
+  { name: "source", type: "\"yaml\" | \"api\" | \"seed\"", description: "How this workspace was created" },
+]} />
+
+## Default Policy
+
+Each workspace has a `default_policy` that determines what happens when no route rule explicitly matches a tool call:
+
+- **`allow`** — tool calls are permitted unless a deny rule matches. Good for trusted, internal projects.
+- **`deny`** — tool calls are blocked unless an allow rule matches. Better for production or sensitive environments.
+
+<Callout type="tip" title="Principle of least privilege">
+For production workspaces, set `default_policy: "deny"` and explicitly allow only the tools you need. This ensures new downstream tools are blocked by default.
+</Callout>
+
+## Global Workspace
+
+The **global workspace** has an empty `root_path` (`""`). It acts as the ultimate fallback — if no other workspace matches the client's working directory, the global workspace applies.
+
+Every MCPlexer instance has a global workspace. It's created automatically on first run if not defined in your config.
+
+## Ancestor Fallback Chain
+
+MCPlexer doesn't just check the single matched workspace. It walks **up the directory tree**, evaluating route rules at each ancestor workspace until a match is found. This is the ancestor fallback chain.
+
+### Example
+
+Given these workspaces:
+
+```yaml
+workspaces:
+  - name: "Global"
+    root_path: ""
+    default_policy: deny
+
+  - name: "Projects"
+    root_path: "/home/user/projects"
+    default_policy: allow
+
+  - name: "Acme API"
+    root_path: "/home/user/projects/acme/api"
+    default_policy: deny
+```
+
+When a tool call is made from `/home/user/projects/acme/api/src`:
+
+1. **Acme API** workspace is matched (longest prefix)
+2. Route rules on Acme API are evaluated first
+3. If no rule matches, MCPlexer falls back to **Projects** workspace rules
+4. If still no match, falls back to **Global** workspace rules
+5. If no rule matches anywhere, the **matched workspace's** `default_policy` applies (`deny` in this case)
+
+<Callout type="info" title="Fallback only affects route rules">
+The ancestor fallback chain evaluates route rules up the tree, but the `default_policy` is always taken from the directly matched workspace (the most specific one).
+</Callout>
+
+## Subpath Routing
+
+Within a workspace, route rules can use **path globs** to match subdirectories. MCPlexer computes a subpath relative to the workspace root:
+
+```
+client CWD:    /home/user/projects/acme/api/src/handlers
+workspace root: /home/user/projects/acme/api
+subpath:        src/handlers
+```
+
+Route rules can then match against this subpath using patterns like `src/**`, `tests/*`, or `migrations/**`.
+
+## Creating Workspaces
+
+### Via YAML Config
+
+```yaml
+workspaces:
+  - name: "My Project"
+    root_path: "/home/user/projects/myapp"
+    default_policy: deny
+    tags:
+      env: production
+      team: backend
+```
+
+### Via REST API
+
+<TerminalBlock title="terminal">
+{`curl -X POST http://localhost:8080/api/v1/workspaces \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "name": "My Project",
+    "root_path": "/home/user/projects/myapp",
+    "default_policy": "deny",
+    "tags": {"env": "production", "team": "backend"}
+  }'`}
+</TerminalBlock>
+
+### Via Web UI
+
+Navigate to **Config > Workspaces** in the dashboard and click **Add Workspace**. Fill in the name, root path, and default policy.
+
+## Tags
+
+Tags are arbitrary key-value pairs attached to a workspace. They don't affect routing behavior directly but are useful for:
+
+- **Organization** — group workspaces by team, environment, or project
+- **Filtering** — the API and UI support filtering by tags
+- **Audit context** — tags appear in audit log entries for traceability
+
+<PrevNextNav />

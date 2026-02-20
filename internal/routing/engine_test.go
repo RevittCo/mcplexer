@@ -68,11 +68,32 @@ func (m *mockRouteStore) GetAuditStats(context.Context, string, time.Time, time.
 func (m *mockRouteStore) GetDashboardTimeSeries(context.Context, time.Time, time.Time) ([]store.TimeSeriesPoint, error) {
 	return nil, nil
 }
+func (m *mockRouteStore) GetDashboardTimeSeriesBucketed(context.Context, time.Time, time.Time, int) ([]store.TimeSeriesPoint, error) {
+	return nil, nil
+}
+func (m *mockRouteStore) GetToolLeaderboard(context.Context, time.Time, time.Time, int) ([]store.ToolLeaderboardEntry, error) {
+	return nil, nil
+}
+func (m *mockRouteStore) GetServerHealth(context.Context, time.Time, time.Time) ([]store.ServerHealthEntry, error) {
+	return nil, nil
+}
+func (m *mockRouteStore) GetErrorBreakdown(context.Context, time.Time, time.Time, int) ([]store.ErrorBreakdownEntry, error) {
+	return nil, nil
+}
+func (m *mockRouteStore) GetRouteHitMap(context.Context, time.Time, time.Time) ([]store.RouteHitEntry, error) {
+	return nil, nil
+}
+func (m *mockRouteStore) GetAuditCacheStats(context.Context, time.Time, time.Time) (*store.AuditCacheStats, error) {
+	return nil, nil
+}
 func (m *mockRouteStore) CreateToolApproval(context.Context, *store.ToolApproval) error { return nil }
 func (m *mockRouteStore) GetToolApproval(context.Context, string) (*store.ToolApproval, error) { return nil, nil }
 func (m *mockRouteStore) ListPendingApprovals(context.Context) ([]store.ToolApproval, error)   { return nil, nil }
 func (m *mockRouteStore) ResolveToolApproval(context.Context, string, string, string, string, string) error { return nil }
 func (m *mockRouteStore) ExpirePendingApprovals(context.Context, time.Time) (int, error) { return 0, nil }
+func (m *mockRouteStore) GetApprovalMetrics(context.Context, time.Time, time.Time) (*store.ApprovalMetrics, error) {
+	return nil, nil
+}
 func (m *mockRouteStore) Tx(context.Context, func(store.Store) error) error { return nil }
 func (m *mockRouteStore) Ping(context.Context) error                        { return nil }
 func (m *mockRouteStore) Close() error                                      { return nil }
@@ -372,61 +393,64 @@ func TestRouteWithFallback(t *testing.T) {
 		clientRoot string
 		ancestors  []WorkspaceAncestor
 		wantDS     string
+		wantWsID   string
+		wantWsName string
+		wantSub    string
 		wantErr    error
 	}{
 		{
-			"first workspace matches",
-			"github__create_issue",
-			"/home/user/project",
-			[]WorkspaceAncestor{
-				{ID: "ws-project", RootPath: "/home/user/project"},
-				{ID: "ws-global", RootPath: "/"},
+			name: "first workspace matches",
+			tool: "github__create_issue",
+			clientRoot: "/home/user/project",
+			ancestors: []WorkspaceAncestor{
+				{ID: "ws-project", Name: "Project", RootPath: "/home/user/project"},
+				{ID: "ws-global", Name: "Global", RootPath: "/"},
 			},
-			"gh-server", nil,
+			wantDS: "gh-server", wantWsID: "ws-project", wantWsName: "Project", wantSub: "",
 		},
 		{
-			"fallback to parent workspace",
-			"postgres__query",
-			"/home/user/project",
-			[]WorkspaceAncestor{
-				{ID: "ws-project", RootPath: "/home/user/project"},
-				{ID: "ws-global", RootPath: "/"},
+			name: "fallback to parent workspace",
+			tool: "postgres__query",
+			clientRoot: "/home/user/project",
+			ancestors: []WorkspaceAncestor{
+				{ID: "ws-project", Name: "Project", RootPath: "/home/user/project"},
+				{ID: "ws-global", Name: "Global", RootPath: "/"},
 			},
-			"pg-server", nil,
+			wantDS: "pg-server", wantWsID: "ws-global", wantWsName: "Global", wantSub: "home/user/project",
 		},
 		{
-			"deny blocks fallback",
-			"postgres__query",
-			"/home/user/project",
-			[]WorkspaceAncestor{
-				{ID: "ws-deny", RootPath: "/home/user/project"},
-				{ID: "ws-global", RootPath: "/"},
+			name: "deny blocks fallback",
+			tool: "postgres__query",
+			clientRoot: "/home/user/project",
+			ancestors: []WorkspaceAncestor{
+				{ID: "ws-deny", Name: "Deny", RootPath: "/home/user/project"},
+				{ID: "ws-global", Name: "Global", RootPath: "/"},
 			},
-			"", ErrDenied,
+			wantErr: ErrDenied,
 		},
 		{
-			"empty chain uses default route",
-			"github__create_issue",
-			"",
-			nil,
-			"", ErrNoRoute,
+			name: "empty chain uses default route",
+			tool: "github__create_issue",
+			clientRoot: "",
+			ancestors: nil,
+			wantErr: ErrNoRoute,
 		},
 		{
-			"all workspaces miss",
-			"unknown__tool",
-			"/home/user/project",
-			[]WorkspaceAncestor{
-				{ID: "ws-project", RootPath: "/home/user/project"},
-				{ID: "ws-global", RootPath: "/"},
+			name: "all workspaces miss",
+			tool: "unknown__tool",
+			clientRoot: "/home/user/project",
+			ancestors: []WorkspaceAncestor{
+				{ID: "ws-project", Name: "Project", RootPath: "/home/user/project"},
+				{ID: "ws-global", Name: "Global", RootPath: "/"},
 			},
-			"", ErrNoRoute,
+			wantErr: ErrNoRoute,
 		},
 		{
-			"single workspace match",
-			"postgres__query",
-			"/home/user/project",
-			[]WorkspaceAncestor{{ID: "ws-global", RootPath: "/"}},
-			"pg-server", nil,
+			name: "single workspace match",
+			tool: "postgres__query",
+			clientRoot: "/home/user/project",
+			ancestors: []WorkspaceAncestor{{ID: "ws-global", Name: "Global", RootPath: "/"}},
+			wantDS: "pg-server", wantWsID: "ws-global", wantWsName: "Global", wantSub: "home/user/project",
 		},
 	}
 
@@ -445,6 +469,18 @@ func TestRouteWithFallback(t *testing.T) {
 			if result.DownstreamServerID != tt.wantDS {
 				t.Errorf("ds = %q, want %q",
 					result.DownstreamServerID, tt.wantDS)
+			}
+			if result.MatchedWorkspaceID != tt.wantWsID {
+				t.Errorf("workspace_id = %q, want %q",
+					result.MatchedWorkspaceID, tt.wantWsID)
+			}
+			if result.MatchedWorkspaceName != tt.wantWsName {
+				t.Errorf("workspace_name = %q, want %q",
+					result.MatchedWorkspaceName, tt.wantWsName)
+			}
+			if result.Subpath != tt.wantSub {
+				t.Errorf("subpath = %q, want %q",
+					result.Subpath, tt.wantSub)
 			}
 		})
 	}
@@ -478,42 +514,43 @@ func TestRouteWithFallback_PathScoped(t *testing.T) {
 		tool       string
 		clientRoot string
 		wantDS     string
+		wantSub    string
 		wantErr    error
 	}{
 		{
 			"path-scoped rule matches when client is under src",
 			"github__create_issue",
 			"/home/user/project/src/api",
-			"gh-server", nil,
+			"gh-server", "src/api", nil,
 		},
 		{
 			"path-scoped rule does NOT match at workspace root",
 			"github__create_issue",
 			"/home/user/project",
-			"", ErrNoRoute,
+			"", "", ErrNoRoute,
 		},
 		{
 			"path-scoped rule does NOT match outside src",
 			"github__create_issue",
 			"/home/user/project/docs",
-			"", ErrNoRoute,
+			"", "", ErrNoRoute,
 		},
 		{
 			"catch-all glob matches from workspace root",
 			"slack__post_message",
 			"/home/user/project",
-			"slack-server", nil,
+			"slack-server", "", nil,
 		},
 		{
 			"catch-all glob matches from subdirectory",
 			"slack__post_message",
 			"/home/user/project/src/api",
-			"slack-server", nil,
+			"slack-server", "src/api", nil,
 		},
 	}
 
 	ancestors := []WorkspaceAncestor{
-		{ID: "ws-project", RootPath: "/home/user/project"},
+		{ID: "ws-project", Name: "Project", RootPath: "/home/user/project"},
 	}
 
 	for _, tt := range tests {
@@ -531,6 +568,14 @@ func TestRouteWithFallback_PathScoped(t *testing.T) {
 			if result.DownstreamServerID != tt.wantDS {
 				t.Errorf("ds = %q, want %q",
 					result.DownstreamServerID, tt.wantDS)
+			}
+			if result.Subpath != tt.wantSub {
+				t.Errorf("subpath = %q, want %q",
+					result.Subpath, tt.wantSub)
+			}
+			if result.MatchedWorkspaceID != "ws-project" {
+				t.Errorf("workspace_id = %q, want %q",
+					result.MatchedWorkspaceID, "ws-project")
 			}
 		})
 	}

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -140,9 +141,16 @@ func (d *DB) UpdateOAuthProvider(ctx context.Context, p *store.OAuthProvider) er
 }
 
 func (d *DB) DeleteOAuthProvider(ctx context.Context, id string) error {
-	res, err := d.q.ExecContext(ctx, `DELETE FROM oauth_providers WHERE id = ?`, id)
-	if err != nil {
-		return err
-	}
-	return checkRowsAffected(res)
+	return d.withTx(ctx, func(q queryable) error {
+		if _, err := q.ExecContext(ctx,
+			`UPDATE auth_scopes SET oauth_provider_id = '' WHERE oauth_provider_id = ?`,
+			id); err != nil {
+			return fmt.Errorf("cascade nullify auth_scopes: %w", err)
+		}
+		res, err := q.ExecContext(ctx, `DELETE FROM oauth_providers WHERE id = ?`, id)
+		if err != nil {
+			return err
+		}
+		return checkRowsAffected(res)
+	})
 }

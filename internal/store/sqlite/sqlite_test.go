@@ -473,6 +473,332 @@ func TestTx(t *testing.T) {
 	}
 }
 
+// --- Cascade delete tests ---
+
+func createTestApproval(t *testing.T, db *sqlite.DB, wsID, dsID, asID, rrID string) string {
+	t.Helper()
+	ctx := context.Background()
+	a := &store.ToolApproval{
+		Status:             "pending",
+		WorkspaceID:        wsID,
+		DownstreamServerID: dsID,
+		AuthScopeID:        asID,
+		RouteRuleID:        rrID,
+		ToolName:           "test__tool",
+		TimeoutSec:         60,
+	}
+	if err := db.CreateToolApproval(ctx, a); err != nil {
+		t.Fatalf("create tool approval: %v", err)
+	}
+	return a.ID
+}
+
+func TestDeleteWorkspaceCascade(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	ws := &store.Workspace{Name: "cascade-ws", DefaultPolicy: "allow"}
+	if err := db.CreateWorkspace(ctx, ws); err != nil {
+		t.Fatal(err)
+	}
+	ds := &store.DownstreamServer{
+		Name: "cascade-ds", Transport: "stdio",
+		ToolNamespace: "test", RestartPolicy: "on-failure",
+	}
+	if err := db.CreateDownstreamServer(ctx, ds); err != nil {
+		t.Fatal(err)
+	}
+
+	r := &store.RouteRule{
+		Priority: 10, WorkspaceID: ws.ID,
+		DownstreamServerID: ds.ID, Policy: "allow",
+		ToolMatch: json.RawMessage(`["*"]`),
+	}
+	if err := db.CreateRouteRule(ctx, r); err != nil {
+		t.Fatal(err)
+	}
+
+	approvalID := createTestApproval(t, db, ws.ID, ds.ID, "", r.ID)
+
+	// Delete the workspace — should cascade.
+	if err := db.DeleteWorkspace(ctx, ws.ID); err != nil {
+		t.Fatalf("delete workspace: %v", err)
+	}
+
+	// Route rule should be gone.
+	_, err := db.GetRouteRule(ctx, r.ID)
+	if err != store.ErrNotFound {
+		t.Fatalf("expected route rule ErrNotFound, got %v", err)
+	}
+
+	// Approval should be cancelled.
+	a, err := db.GetToolApproval(ctx, approvalID)
+	if err != nil {
+		t.Fatalf("get approval: %v", err)
+	}
+	if a.Status != "cancelled" {
+		t.Fatalf("approval status = %q, want cancelled", a.Status)
+	}
+	if a.ResolvedAt == nil {
+		t.Fatal("approval resolved_at should be set")
+	}
+
+	// Downstream should still exist.
+	if _, err := db.GetDownstreamServer(ctx, ds.ID); err != nil {
+		t.Fatalf("downstream should still exist: %v", err)
+	}
+}
+
+func TestDeleteDownstreamServerCascade(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	ws := &store.Workspace{Name: "ds-cascade-ws", DefaultPolicy: "allow"}
+	if err := db.CreateWorkspace(ctx, ws); err != nil {
+		t.Fatal(err)
+	}
+	ds := &store.DownstreamServer{
+		Name: "ds-cascade-ds", Transport: "stdio",
+		ToolNamespace: "test", RestartPolicy: "on-failure",
+	}
+	if err := db.CreateDownstreamServer(ctx, ds); err != nil {
+		t.Fatal(err)
+	}
+
+	r := &store.RouteRule{
+		Priority: 10, WorkspaceID: ws.ID,
+		DownstreamServerID: ds.ID, Policy: "allow",
+		ToolMatch: json.RawMessage(`["*"]`),
+	}
+	if err := db.CreateRouteRule(ctx, r); err != nil {
+		t.Fatal(err)
+	}
+
+	approvalID := createTestApproval(t, db, ws.ID, ds.ID, "", r.ID)
+
+	if err := db.DeleteDownstreamServer(ctx, ds.ID); err != nil {
+		t.Fatalf("delete downstream: %v", err)
+	}
+
+	// Route rule should be gone.
+	_, err := db.GetRouteRule(ctx, r.ID)
+	if err != store.ErrNotFound {
+		t.Fatalf("expected route rule ErrNotFound, got %v", err)
+	}
+
+	// Approval should be cancelled.
+	a, err := db.GetToolApproval(ctx, approvalID)
+	if err != nil {
+		t.Fatalf("get approval: %v", err)
+	}
+	if a.Status != "cancelled" {
+		t.Fatalf("approval status = %q, want cancelled", a.Status)
+	}
+
+	// Workspace should still exist.
+	if _, err := db.GetWorkspace(ctx, ws.ID); err != nil {
+		t.Fatalf("workspace should still exist: %v", err)
+	}
+}
+
+func TestDeleteAuthScopeCascade(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	ws := &store.Workspace{Name: "as-cascade-ws", DefaultPolicy: "allow"}
+	if err := db.CreateWorkspace(ctx, ws); err != nil {
+		t.Fatal(err)
+	}
+	ds := &store.DownstreamServer{
+		Name: "as-cascade-ds", Transport: "stdio",
+		ToolNamespace: "test", RestartPolicy: "on-failure",
+	}
+	if err := db.CreateDownstreamServer(ctx, ds); err != nil {
+		t.Fatal(err)
+	}
+	as := &store.AuthScope{Name: "as-cascade-scope", Type: "env"}
+	if err := db.CreateAuthScope(ctx, as); err != nil {
+		t.Fatal(err)
+	}
+
+	r := &store.RouteRule{
+		Priority: 10, WorkspaceID: ws.ID,
+		DownstreamServerID: ds.ID, AuthScopeID: as.ID,
+		Policy: "allow", ToolMatch: json.RawMessage(`["*"]`),
+	}
+	if err := db.CreateRouteRule(ctx, r); err != nil {
+		t.Fatal(err)
+	}
+
+	approvalID := createTestApproval(t, db, ws.ID, ds.ID, as.ID, r.ID)
+
+	if err := db.DeleteAuthScope(ctx, as.ID); err != nil {
+		t.Fatalf("delete auth scope: %v", err)
+	}
+
+	// Route rule should still exist but with auth_scope_id cleared.
+	got, err := db.GetRouteRule(ctx, r.ID)
+	if err != nil {
+		t.Fatalf("get route rule: %v", err)
+	}
+	if got.AuthScopeID != "" {
+		t.Fatalf("auth_scope_id = %q, want empty", got.AuthScopeID)
+	}
+
+	// Approval should be cancelled.
+	a, err := db.GetToolApproval(ctx, approvalID)
+	if err != nil {
+		t.Fatalf("get approval: %v", err)
+	}
+	if a.Status != "cancelled" {
+		t.Fatalf("approval status = %q, want cancelled", a.Status)
+	}
+}
+
+func TestDeleteOAuthProviderCascade(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	p := &store.OAuthProvider{
+		Name: "oauth-cascade", ClientID: "cid",
+		Scopes: json.RawMessage(`["read"]`),
+	}
+	if err := db.CreateOAuthProvider(ctx, p); err != nil {
+		t.Fatal(err)
+	}
+
+	as := &store.AuthScope{
+		Name: "oauth-scope", Type: "oauth",
+		OAuthProviderID: p.ID,
+	}
+	if err := db.CreateAuthScope(ctx, as); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := db.DeleteOAuthProvider(ctx, p.ID); err != nil {
+		t.Fatalf("delete oauth provider: %v", err)
+	}
+
+	// Auth scope should still exist but with oauth_provider_id cleared.
+	got, err := db.GetAuthScope(ctx, as.ID)
+	if err != nil {
+		t.Fatalf("get auth scope: %v", err)
+	}
+	if got.OAuthProviderID != "" {
+		t.Fatalf("oauth_provider_id = %q, want empty", got.OAuthProviderID)
+	}
+}
+
+func TestDeleteRouteRuleCascade(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	ws := &store.Workspace{Name: "rr-cascade-ws", DefaultPolicy: "allow"}
+	if err := db.CreateWorkspace(ctx, ws); err != nil {
+		t.Fatal(err)
+	}
+	ds := &store.DownstreamServer{
+		Name: "rr-cascade-ds", Transport: "stdio",
+		ToolNamespace: "test", RestartPolicy: "on-failure",
+	}
+	if err := db.CreateDownstreamServer(ctx, ds); err != nil {
+		t.Fatal(err)
+	}
+
+	r := &store.RouteRule{
+		Priority: 10, WorkspaceID: ws.ID,
+		DownstreamServerID: ds.ID, Policy: "allow",
+		ToolMatch: json.RawMessage(`["*"]`),
+	}
+	if err := db.CreateRouteRule(ctx, r); err != nil {
+		t.Fatal(err)
+	}
+
+	approvalID := createTestApproval(t, db, ws.ID, ds.ID, "", r.ID)
+
+	if err := db.DeleteRouteRule(ctx, r.ID); err != nil {
+		t.Fatalf("delete route rule: %v", err)
+	}
+
+	// Approval should be cancelled.
+	a, err := db.GetToolApproval(ctx, approvalID)
+	if err != nil {
+		t.Fatalf("get approval: %v", err)
+	}
+	if a.Status != "cancelled" {
+		t.Fatalf("approval status = %q, want cancelled", a.Status)
+	}
+}
+
+func TestDeleteCascadeWithinTx(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	ws := &store.Workspace{Name: "tx-cascade-ws", DefaultPolicy: "allow"}
+	if err := db.CreateWorkspace(ctx, ws); err != nil {
+		t.Fatal(err)
+	}
+	ds := &store.DownstreamServer{
+		Name: "tx-cascade-ds", Transport: "stdio",
+		ToolNamespace: "test", RestartPolicy: "on-failure",
+	}
+	if err := db.CreateDownstreamServer(ctx, ds); err != nil {
+		t.Fatal(err)
+	}
+
+	r := &store.RouteRule{
+		Priority: 10, WorkspaceID: ws.ID,
+		DownstreamServerID: ds.ID, Policy: "allow",
+		ToolMatch: json.RawMessage(`["*"]`),
+	}
+	if err := db.CreateRouteRule(ctx, r); err != nil {
+		t.Fatal(err)
+	}
+
+	approvalID := createTestApproval(t, db, ws.ID, ds.ID, "", r.ID)
+
+	// Delete within a transaction — withTx should reuse the outer tx.
+	err := db.Tx(ctx, func(tx store.Store) error {
+		return tx.DeleteWorkspace(ctx, ws.ID)
+	})
+	if err != nil {
+		t.Fatalf("tx delete: %v", err)
+	}
+
+	// Route rule gone.
+	_, err = db.GetRouteRule(ctx, r.ID)
+	if err != store.ErrNotFound {
+		t.Fatalf("expected route rule ErrNotFound, got %v", err)
+	}
+
+	// Approval cancelled.
+	a, err := db.GetToolApproval(ctx, approvalID)
+	if err != nil {
+		t.Fatalf("get approval: %v", err)
+	}
+	if a.Status != "cancelled" {
+		t.Fatalf("approval status = %q, want cancelled", a.Status)
+	}
+}
+
+func TestDeleteNoChildren(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	// Delete a workspace with no route rules or approvals.
+	ws := &store.Workspace{Name: "no-children-ws", DefaultPolicy: "allow"}
+	if err := db.CreateWorkspace(ctx, ws); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.DeleteWorkspace(ctx, ws.ID); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	_, err := db.GetWorkspace(ctx, ws.ID)
+	if err != store.ErrNotFound {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}
+
 func TestNotFound(t *testing.T) {
 	db := newTestDB(t)
 	ctx := context.Background()

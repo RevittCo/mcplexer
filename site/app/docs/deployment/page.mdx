@@ -1,0 +1,181 @@
+import { Callout } from "@/components/docs/callout";
+import { TerminalBlock } from "@/components/docs/terminal-block";
+import { PrevNextNav } from "@/components/docs/prev-next-nav";
+
+# Deployment
+
+MCPlexer can run as a foreground process, a background daemon, a Docker container, or a systemd service. This guide covers each option and production best practices.
+
+## Daemon Mode
+
+The daemon runs MCPlexer as a background process, communicating over a Unix socket.
+
+### Start the Daemon
+
+<TerminalBlock title="terminal">
+{`mcplexer daemon start`}
+</TerminalBlock>
+
+The daemon starts in the background and writes its PID file to `~/.mcplexer/daemon.pid`. The Unix socket is created at `~/.mcplexer/daemon.sock`.
+
+### Stop the Daemon
+
+<TerminalBlock title="terminal">
+{`mcplexer daemon stop`}
+</TerminalBlock>
+
+### Check Status
+
+<TerminalBlock title="terminal">
+{`mcplexer daemon status
+
+# Output:
+# Status:  running
+# PID:     12345
+# Socket:  /home/user/.mcplexer/daemon.sock
+# Uptime:  2h 34m`}
+</TerminalBlock>
+
+### View Logs
+
+<TerminalBlock title="terminal">
+{`mcplexer daemon logs
+
+# Follow mode:
+mcplexer daemon logs -f`}
+</TerminalBlock>
+
+<Callout type="info" title="Socket communication">
+  When the daemon is running, the CLI communicates with it over the Unix socket. Commands like `mcplexer status` and `mcplexer serve --mode=stdio` will automatically connect to the daemon instead of starting a new process.
+</Callout>
+
+## Docker
+
+Run MCPlexer in a Docker container with your configuration and database mounted as volumes.
+
+```dockerfile
+FROM golang:1.23-alpine AS builder
+WORKDIR /app
+COPY . .
+RUN make build
+
+FROM alpine:latest
+COPY --from=builder /app/bin/mcplexer /usr/local/bin/mcplexer
+EXPOSE 8080
+ENTRYPOINT ["mcplexer", "serve", "--mode=http"]
+```
+
+### Running with Docker
+
+<TerminalBlock title="terminal">
+{`docker run -d \\
+  -p 8080:8080 \\
+  -v ~/.mcplexer:/root/.mcplexer \\
+  mcplexer:latest`}
+</TerminalBlock>
+
+### Docker Compose
+
+```yaml
+services:
+  mcplexer:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - ~/.mcplexer:/root/.mcplexer
+    environment:
+      - MCPLEXER_LOG_LEVEL=info
+    restart: unless-stopped
+```
+
+<Callout type="warning" title="Socket mounting">
+  If downstream MCP servers need access to host sockets (e.g., Docker socket), mount them explicitly. Be cautious about the security implications of socket passthrough.
+</Callout>
+
+## Systemd Service
+
+For Linux servers, create a systemd service for automatic startup and process management.
+
+```ini
+[Unit]
+Description=MCPlexer MCP Gateway
+After=network.target
+
+[Service]
+Type=simple
+User=mcplexer
+Group=mcplexer
+ExecStart=/usr/local/bin/mcplexer serve --mode=http --port=8080
+Restart=on-failure
+RestartSec=5
+WorkingDirectory=/home/mcplexer
+Environment=MCPLEXER_LOG_LEVEL=info
+
+[Install]
+WantedBy=multi-user.target
+```
+
+<TerminalBlock title="terminal">
+{`sudo cp mcplexer.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable mcplexer
+sudo systemctl start mcplexer`}
+</TerminalBlock>
+
+## Environment Variables
+
+Configure MCPlexer behavior through environment variables:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `MCPLEXER_LOG_LEVEL` | Log verbosity: `debug`, `info`, `warn`, `error` | `info` |
+| `MCPLEXER_DB_PATH` | Path to SQLite database | `~/.mcplexer/mcplexer.db` |
+| `MCPLEXER_CONFIG_PATH` | Path to YAML config file | `~/.mcplexer/mcplexer.yaml` |
+| `MCPLEXER_PORT` | HTTP server port | `8080` |
+| `MCPLEXER_CONTROL_READONLY` | Control server read-only mode | `false` |
+
+## Production Checklist
+
+Before running MCPlexer in production, verify these items:
+
+### Age Key Backup
+
+MCPlexer encrypts secrets at rest using [age](https://age-encryption.org/) keys. **Back up your age identity file** — if lost, all encrypted secrets become unrecoverable.
+
+<TerminalBlock title="terminal">
+{`# Default location
+cp ~/.mcplexer/age-identity.txt /secure/backup/location/`}
+</TerminalBlock>
+
+<Callout type="danger" title="Key loss = data loss">
+  There is no recovery mechanism for age-encrypted secrets without the identity file. Store backups in a secure, separate location.
+</Callout>
+
+### Database Backup
+
+The SQLite database holds all configuration, audit logs, and encrypted credentials. Set up regular backups:
+
+<TerminalBlock title="terminal">
+{`# SQLite online backup
+sqlite3 ~/.mcplexer/mcplexer.db ".backup /backups/mcplexer-$(date +%Y%m%d).db"`}
+</TerminalBlock>
+
+### Socket Permissions
+
+If using daemon mode, ensure the Unix socket has appropriate permissions:
+
+<TerminalBlock title="terminal">
+{`ls -la ~/.mcplexer/daemon.sock
+# Only the mcplexer user should have read/write access`}
+</TerminalBlock>
+
+### Network Isolation
+
+The HTTP API and web UI have no authentication. In production:
+
+- Bind to `localhost` only (the default)
+- Use a reverse proxy with authentication if remote access is needed
+- Restrict firewall rules to prevent external access to the API port
+
+<PrevNextNav />

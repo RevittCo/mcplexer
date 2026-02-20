@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -142,9 +143,21 @@ func (d *DB) UpdateAuthScopeTokenData(ctx context.Context, id string, data []byt
 }
 
 func (d *DB) DeleteAuthScope(ctx context.Context, id string) error {
-	res, err := d.q.ExecContext(ctx, `DELETE FROM auth_scopes WHERE id = ?`, id)
-	if err != nil {
-		return err
-	}
-	return checkRowsAffected(res)
+	return d.withTx(ctx, func(q queryable) error {
+		if _, err := q.ExecContext(ctx,
+			`UPDATE route_rules SET auth_scope_id = '' WHERE auth_scope_id = ?`, id); err != nil {
+			return fmt.Errorf("cascade nullify route_rules: %w", err)
+		}
+		if _, err := q.ExecContext(ctx,
+			`UPDATE tool_approvals SET status = 'cancelled', resolved_at = ?
+			 WHERE auth_scope_id = ? AND status = 'pending'`,
+			formatTime(time.Now().UTC()), id); err != nil {
+			return fmt.Errorf("cascade cancel tool_approvals: %w", err)
+		}
+		res, err := q.ExecContext(ctx, `DELETE FROM auth_scopes WHERE id = ?`, id)
+		if err != nil {
+			return err
+		}
+		return checkRowsAffected(res)
+	})
 }

@@ -1,0 +1,164 @@
+import { Callout } from "@/components/docs/callout";
+import { TerminalBlock } from "@/components/docs/terminal-block";
+import { PrevNextNav } from "@/components/docs/prev-next-nav";
+
+# Troubleshooting
+
+Common issues and how to resolve them.
+
+## "No matching route"
+
+The routing engine couldn't find a rule matching the tool call in the resolved workspace.
+
+**Check the workspace CWD.** MCPlexer resolves the workspace by matching the client's working directory against workspace `root_path` values. If the wrong workspace is selected, the expected routes won't be available.
+
+<TerminalBlock title="terminal">
+{`mcplexer status
+# Verify which workspaces exist and their root paths`}
+</TerminalBlock>
+
+**Check route priority.** Routes are evaluated in priority order (highest first). A deny rule with higher priority may be blocking your tool call before a lower-priority allow rule is reached.
+
+**Use dry-run.** Simulate the exact tool call to see the routing decision:
+
+<TerminalBlock title="terminal">
+{`mcplexer dry-run <workspace-id> github__list_repos
+
+# Or via the API:
+curl -X POST http://localhost:8080/api/v1/dry-run \\
+  -H "Content-Type: application/json" \\
+  -d '{"workspace_id": "...", "tool_name": "github__list_repos"}'`}
+</TerminalBlock>
+
+The dry-run output shows which rules were evaluated and why each did or didn't match.
+
+**Check the workspace default policy.** If no route matches and the workspace has `default_policy: "deny"`, the call is blocked. Set it to `"allow"` for development or add an explicit allow rule.
+
+## "Connection refused"
+
+The client can't connect to the MCPlexer daemon or HTTP server.
+
+**Check if the daemon is running:**
+
+<TerminalBlock title="terminal">
+{`mcplexer daemon status`}
+</TerminalBlock>
+
+If stopped, start it:
+
+<TerminalBlock title="terminal">
+{`mcplexer daemon start`}
+</TerminalBlock>
+
+**Check the socket path.** The daemon communicates over a Unix socket at `~/.mcplexer/daemon.sock`. Verify it exists and has the correct permissions:
+
+<TerminalBlock title="terminal">
+{`ls -la ~/.mcplexer/daemon.sock`}
+</TerminalBlock>
+
+If the socket file is stale (left over from a crashed process), remove it and restart:
+
+<TerminalBlock title="terminal">
+{`rm ~/.mcplexer/daemon.sock
+mcplexer daemon start`}
+</TerminalBlock>
+
+**Check the port.** If using HTTP mode, verify the port isn't already in use:
+
+<TerminalBlock title="terminal">
+{`lsof -i :8080`}
+</TerminalBlock>
+
+## "OAuth token expired"
+
+OAuth tokens have a limited lifetime. When a token expires, tool calls using that auth scope will fail.
+
+**Check token status:**
+
+<TerminalBlock title="terminal">
+{`curl http://localhost:8080/api/v1/auth-scopes/<id>/oauth/status`}
+</TerminalBlock>
+
+**Automatic refresh.** MCPlexer automatically refreshes tokens using the refresh token if one was provided during authorization. If refresh fails, you need to re-authorize manually.
+
+**Re-authorize:**
+
+<TerminalBlock title="terminal">
+{`# Via the web UI: navigate to Credentials > your auth scope > Re-authorize
+
+# Via the API:
+curl http://localhost:8080/api/v1/auth-scopes/<id>/oauth/authorize`}
+</TerminalBlock>
+
+This opens the OAuth flow again. Once complete, the new token is stored and tool calls resume.
+
+<Callout type="tip" title="Token monitoring">
+  The [Dashboard](/docs/dashboard) shows OAuth token status for each auth scope. Expired tokens are highlighted so you can spot them quickly.
+</Callout>
+
+## "Tool not found"
+
+The requested tool doesn't exist in MCPlexer's tool registry.
+
+**Check the namespace prefix.** All tools are namespaced as `{namespace}__{toolname}`. Make sure the client is using the full namespaced name:
+
+<TerminalBlock title="terminal">
+{`# Correct:
+github__list_repos
+
+# Wrong:
+list_repos`}
+</TerminalBlock>
+
+**Run tool discovery.** If the downstream server was recently added or updated, its tools may not be registered yet:
+
+<TerminalBlock title="terminal">
+{`curl -X POST http://localhost:8080/api/v1/downstreams/<id>/discover`}
+</TerminalBlock>
+
+**Check if the server is disabled.** Disabled downstream servers don't expose their tools. Verify the server is enabled in the web UI under **Config > Downstream Servers** or via the API.
+
+**Check the downstream server is reachable.** If the downstream process crashes during discovery, no tools are registered. Check logs for startup errors.
+
+## Debug Logging
+
+Enable verbose logging to see the full request lifecycle — workspace resolution, route matching, auth injection, and downstream dispatch.
+
+<TerminalBlock title="terminal">
+{`MCPLEXER_LOG_LEVEL=debug mcplexer serve --mode=http`}
+</TerminalBlock>
+
+For the daemon:
+
+<TerminalBlock title="terminal">
+{`mcplexer daemon stop
+MCPLEXER_LOG_LEVEL=debug mcplexer daemon start
+mcplexer daemon logs -f`}
+</TerminalBlock>
+
+Debug output includes:
+
+- Workspace resolution details (CWD matching, selected workspace)
+- Route evaluation steps (which rules matched/skipped and why)
+- Auth scope injection (which env vars were set)
+- Downstream process lifecycle (start, stop, crash, restart)
+- Cache hit/miss decisions
+
+## Common CLI Issues
+
+**Config file not found.** MCPlexer looks for `~/.mcplexer/mcplexer.yaml` by default. Override with `MCPLEXER_CONFIG_PATH`:
+
+<TerminalBlock title="terminal">
+{`MCPLEXER_CONFIG_PATH=/path/to/config.yaml mcplexer serve`}
+</TerminalBlock>
+
+**Database locked.** Only one MCPlexer process can write to the SQLite database at a time. If you see "database is locked" errors, check for other running instances:
+
+<TerminalBlock title="terminal">
+{`mcplexer daemon status
+ps aux | grep mcplexer`}
+</TerminalBlock>
+
+**Permission denied.** Ensure the MCPlexer binary has execute permissions and the `~/.mcplexer/` directory is writable by the current user.
+
+<PrevNextNav />

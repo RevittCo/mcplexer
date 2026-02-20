@@ -19,57 +19,6 @@ func (e *ValidationError) Error() string {
 func validate(cfg *FileConfig) error {
 	var errs []string
 
-	providerIDs := make(map[string]bool, len(cfg.OAuthProviders))
-	for i, p := range cfg.OAuthProviders {
-		if p.ID == "" {
-			errs = append(errs, fmt.Sprintf("oauth_providers[%d]: id is required", i))
-		}
-		if providerIDs[p.ID] {
-			errs = append(errs, fmt.Sprintf("oauth_providers[%d]: duplicate id %q", i, p.ID))
-		}
-		providerIDs[p.ID] = true
-		if p.Name == "" {
-			errs = append(errs, fmt.Sprintf("oauth_providers[%d]: name is required", i))
-		}
-		if p.AuthorizeURL == "" {
-			errs = append(errs, fmt.Sprintf("oauth_providers[%d]: authorize_url is required", i))
-		}
-		if p.TokenURL == "" {
-			errs = append(errs, fmt.Sprintf("oauth_providers[%d]: token_url is required", i))
-		}
-	}
-
-	wsIDs := make(map[string]bool, len(cfg.Workspaces))
-	for i, ws := range cfg.Workspaces {
-		if ws.ID == "" {
-			errs = append(errs, fmt.Sprintf("workspaces[%d]: id is required", i))
-		}
-		if wsIDs[ws.ID] {
-			errs = append(errs, fmt.Sprintf("workspaces[%d]: duplicate id %q", i, ws.ID))
-		}
-		wsIDs[ws.ID] = true
-		if ws.Name == "" {
-			errs = append(errs, fmt.Sprintf("workspaces[%d]: name is required", i))
-		}
-		if err := validatePolicy(ws.DefaultPolicy); err != nil {
-			errs = append(errs, fmt.Sprintf("workspaces[%d]: %v", i, err))
-		}
-	}
-
-	scopeIDs := make(map[string]bool, len(cfg.AuthScopes))
-	for i, s := range cfg.AuthScopes {
-		if s.ID == "" {
-			errs = append(errs, fmt.Sprintf("auth_scopes[%d]: id is required", i))
-		}
-		if scopeIDs[s.ID] {
-			errs = append(errs, fmt.Sprintf("auth_scopes[%d]: duplicate id %q", i, s.ID))
-		}
-		scopeIDs[s.ID] = true
-		if s.OAuthProviderID != "" && !providerIDs[s.OAuthProviderID] {
-			errs = append(errs, fmt.Sprintf("auth_scopes[%d]: oauth_provider_id %q not found", i, s.OAuthProviderID))
-		}
-	}
-
 	dsIDs := make(map[string]bool, len(cfg.DownstreamServers))
 	nsSet := make(map[string]bool, len(cfg.DownstreamServers))
 	for i, ds := range cfg.DownstreamServers {
@@ -92,64 +41,8 @@ func validate(cfg *FileConfig) error {
 		}
 	}
 
-	errs = append(errs, validateRouteRules(cfg.RouteRules, wsIDs, dsIDs, scopeIDs)...)
-
 	if len(errs) > 0 {
 		return &ValidationError{Errors: errs}
-	}
-	return nil
-}
-
-func validateRouteRules(rules []routeRuleConfig, wsIDs, dsIDs, scopeIDs map[string]bool) []string {
-	var errs []string
-	ruleIDs := make(map[string]bool, len(rules))
-
-	for i, r := range rules {
-		if r.ID == "" {
-			errs = append(errs, fmt.Sprintf("route_rules[%d]: id is required", i))
-		}
-		if ruleIDs[r.ID] {
-			errs = append(errs, fmt.Sprintf("route_rules[%d]: duplicate id %q", i, r.ID))
-		}
-		ruleIDs[r.ID] = true
-
-		if r.WorkspaceID != "" && !wsIDs[r.WorkspaceID] {
-			errs = append(errs, fmt.Sprintf("route_rules[%d]: workspace_id %q not found", i, r.WorkspaceID))
-		}
-		if r.DownstreamServerID != "" && !dsIDs[r.DownstreamServerID] {
-			errs = append(errs, fmt.Sprintf("route_rules[%d]: downstream_server_id %q not found", i, r.DownstreamServerID))
-		}
-		if r.AuthScopeID != "" && !scopeIDs[r.AuthScopeID] {
-			errs = append(errs, fmt.Sprintf("route_rules[%d]: auth_scope_id %q not found", i, r.AuthScopeID))
-		}
-		if err := validateGlob(r.PathGlob); err != nil {
-			errs = append(errs, fmt.Sprintf("route_rules[%d]: %v", i, err))
-		}
-		if err := validatePolicy(r.Policy); err != nil {
-			errs = append(errs, fmt.Sprintf("route_rules[%d]: %v", i, err))
-		}
-		for j, org := range r.AllowedOrgs {
-			if strings.TrimSpace(org) == "" {
-				errs = append(errs, fmt.Sprintf("route_rules[%d]: allowed_orgs[%d] cannot be empty", i, j))
-			}
-		}
-		for j, repo := range r.AllowedRepos {
-			if err := validateAllowedRepo(repo); err != nil {
-				errs = append(errs, fmt.Sprintf("route_rules[%d]: allowed_repos[%d]: %v", i, j, err))
-			}
-		}
-	}
-	return errs
-}
-
-func validateAllowedRepo(repo string) error {
-	repo = strings.TrimSpace(repo)
-	if repo == "" {
-		return fmt.Errorf("cannot be empty")
-	}
-	parts := strings.Split(repo, "/")
-	if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
-		return fmt.Errorf("must be in owner/repo format")
 	}
 	return nil
 }
@@ -165,10 +58,10 @@ func validatePolicy(p string) error {
 
 func validateTransport(t string) error {
 	switch t {
-	case "stdio", "http", "":
+	case "stdio", "http", "internal", "":
 		return nil
 	default:
-		return fmt.Errorf("invalid transport %q (must be stdio or http)", t)
+		return fmt.Errorf("invalid transport %q (must be stdio, http, or internal)", t)
 	}
 }
 

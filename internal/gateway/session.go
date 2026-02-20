@@ -7,6 +7,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/google/uuid"
 	"github.com/revittco/mcplexer/internal/routing"
@@ -35,6 +36,10 @@ type sessionManager struct {
 	session    *store.Session
 	clientPath string                     // trusted client CWD
 	wsChain    []routing.WorkspaceAncestor // resolved workspace ancestors, most specific first
+
+	// Active tool set for dynamic tool loading.
+	activeTools map[string]Tool
+	toolsMu     sync.RWMutex
 }
 
 func newSessionManager(s store.Store, t TransportMode) *sessionManager {
@@ -88,7 +93,7 @@ func (sm *sessionManager) resolveWorkspaceChain(ctx context.Context, roots []Roo
 
 	chain := make([]routing.WorkspaceAncestor, len(ancestors))
 	for i, ws := range ancestors {
-		chain[i] = routing.WorkspaceAncestor{ID: ws.ID, RootPath: ws.RootPath}
+		chain[i] = routing.WorkspaceAncestor{ID: ws.ID, Name: ws.Name, RootPath: ws.RootPath}
 	}
 	return chain
 }
@@ -200,6 +205,13 @@ func (sm *sessionManager) workspaceID() string {
 	return sm.wsChain[0].ID
 }
 
+func (sm *sessionManager) workspaceName() string {
+	if len(sm.wsChain) == 0 {
+		return ""
+	}
+	return sm.wsChain[0].Name
+}
+
 func (sm *sessionManager) workspaceAncestors() []routing.WorkspaceAncestor {
 	return sm.wsChain
 }
@@ -220,4 +232,50 @@ func (sm *sessionManager) modelHint() string {
 		return ""
 	}
 	return sm.session.ModelHint
+}
+
+// loadTools adds tools to the session's active set.
+func (sm *sessionManager) loadTools(tools []Tool) {
+	sm.toolsMu.Lock()
+	defer sm.toolsMu.Unlock()
+	if sm.activeTools == nil {
+		sm.activeTools = make(map[string]Tool, len(tools))
+	}
+	for _, t := range tools {
+		sm.activeTools[t.Name] = t
+	}
+}
+
+// unloadTools removes tools from the session's active set by name.
+// Returns the number of tools actually removed.
+func (sm *sessionManager) unloadTools(names []string) int {
+	sm.toolsMu.Lock()
+	defer sm.toolsMu.Unlock()
+	removed := 0
+	for _, name := range names {
+		if _, ok := sm.activeTools[name]; ok {
+			delete(sm.activeTools, name)
+			removed++
+		}
+	}
+	return removed
+}
+
+// getActiveTools returns a snapshot of all loaded tools.
+func (sm *sessionManager) getActiveTools() []Tool {
+	sm.toolsMu.RLock()
+	defer sm.toolsMu.RUnlock()
+	tools := make([]Tool, 0, len(sm.activeTools))
+	for _, t := range sm.activeTools {
+		tools = append(tools, t)
+	}
+	return tools
+}
+
+// hasActiveTool checks if a tool is in the active set.
+func (sm *sessionManager) hasActiveTool(name string) bool {
+	sm.toolsMu.RLock()
+	defer sm.toolsMu.RUnlock()
+	_, ok := sm.activeTools[name]
+	return ok
 }

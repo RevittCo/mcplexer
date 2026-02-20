@@ -1,0 +1,127 @@
+import { Callout } from "@/components/docs/callout";
+import { TerminalBlock } from "@/components/docs/terminal-block";
+import { CodeBlock } from "@/components/docs/code-block";
+import { PrevNextNav } from "@/components/docs/prev-next-nav";
+
+# Quickstart
+
+Get MCPlexer running in under 5 minutes. By the end of this guide, your AI client will be routing tool calls through MCPlexer to multiple downstream MCP servers.
+
+## Install
+
+### Go Install
+
+<TerminalBlock title="terminal">
+{`go install github.com/revittco/mcplexer@latest`}
+</TerminalBlock>
+
+### Build from Source
+
+<TerminalBlock title="terminal">
+{`git clone https://github.com/revittco/mcplexer.git
+cd mcplexer
+make build`}
+</TerminalBlock>
+
+### Desktop App
+
+Download the latest release from the [GitHub releases page](https://github.com/revittco/mcplexer/releases). The desktop app bundles MCPlexer with a native UI for managing configuration.
+
+## Initialize
+
+Run `mcplexer init` to create the SQLite database and a default configuration file.
+
+<TerminalBlock title="terminal">
+{`mcplexer init`}
+</TerminalBlock>
+
+This creates two files in `~/.mcplexer/`:
+
+- `mcplexer.db` — SQLite database for workspaces, routes, auth scopes, and audit logs
+- `mcplexer.yaml` — YAML config for downstream server definitions
+
+## Interactive Setup
+
+The setup wizard walks you through configuring your first workspace, downstream server, and route rule.
+
+<TerminalBlock title="terminal">
+{`mcplexer setup`}
+</TerminalBlock>
+
+The wizard will prompt you to:
+
+1. Define a workspace with a root directory path
+2. Add a downstream MCP server (e.g., the GitHub MCP server)
+3. Create a route rule linking the workspace to the downstream server
+4. Optionally configure an auth scope with credentials
+
+<Callout type="tip" title="Skip the wizard">
+  If you prefer editing YAML directly, see the [Configuration](/docs/configuration) guide for the full config file format.
+</Callout>
+
+## Verify
+
+Check that everything is configured correctly.
+
+<TerminalBlock title="terminal">
+{`mcplexer status
+
+# Output:
+# Workspaces:    2
+# Servers:       3
+# Active:        0
+# Sessions:      0`}
+</TerminalBlock>
+
+## Test with Dry Run
+
+Simulate a tool call to verify routing without actually calling the downstream server.
+
+<TerminalBlock title="terminal">
+{`mcplexer dry-run <workspace-id> github__list_repos
+
+# Output:
+# Matched route: rule-abc123
+# Downstream:    github-mcp
+# Auth scope:    github-token
+# Policy:        allow`}
+</TerminalBlock>
+
+## Connect to Claude Desktop
+
+Add MCPlexer to your Claude Desktop configuration to use it as your MCP gateway.
+
+<Callout type="info" title="Config file location">
+  On macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+</Callout>
+
+```json
+{
+  "mcpServers": {
+    "mcplexer": {
+      "command": "mcplexer",
+      "args": ["serve", "--mode=stdio"]
+    }
+  }
+}
+```
+
+Restart Claude Desktop. MCPlexer will now handle all MCP tool calls, routing them to the correct downstream server based on your workspace and route rules.
+
+## How a Tool Call Flows
+
+Once connected, here's what happens when your AI client calls a tool:
+
+1. **Client sends request** — e.g., `github__list_repos` via JSON-RPC over stdio
+2. **MCPlexer resolves workspace** — matches the client's working directory to a workspace
+3. **Routing engine matches** — finds the route rule for `github__list_repos` in that workspace
+4. **Auth scope injects credentials** — environment variables or OAuth tokens are applied
+5. **Downstream server handles it** — MCPlexer forwards to the GitHub MCP server
+6. **Response returns** — the result flows back through MCPlexer to the client
+7. **Audit log records** — the full call is logged with secrets redacted
+
+<Callout type="tip" title="Next steps">
+  Read [Concepts](/docs/concepts) to understand the architecture in depth, or jump to [Configuration](/docs/configuration) to customize your setup.
+</Callout>
+
+<PrevNextNav />

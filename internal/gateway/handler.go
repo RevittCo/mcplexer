@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/revittco/mcplexer/internal/approval"
 	"github.com/revittco/mcplexer/internal/audit"
+	"github.com/revittco/mcplexer/internal/cache"
 	"github.com/revittco/mcplexer/internal/routing"
 	"github.com/revittco/mcplexer/internal/store"
 )
@@ -23,14 +24,28 @@ type ToolLister interface {
 	Call(ctx context.Context, serverID, authScopeID, toolName string, args json.RawMessage) (json.RawMessage, error)
 }
 
+// CachingCaller extends ToolLister with cache-aware calling.
+type CachingCaller interface {
+	ToolLister
+	CallWithMeta(ctx context.Context, serverID, authScopeID, toolName string, args json.RawMessage, cacheBust bool) (cache.CallResult, error)
+	ToolCache() *cache.ToolCache
+}
+
 // handler contains the logic for each MCP method.
 type handler struct {
-	store     store.Store
-	engine    *routing.Engine
-	manager   ToolLister
-	sessions  *sessionManager
-	auditor   *audit.Logger
-	approvals *approval.Manager // nil = approval system disabled
+	store          store.Store
+	engine         *routing.Engine
+	manager        ToolLister
+	sessions       *sessionManager
+	auditor        *audit.Logger
+	approvals      *approval.Manager // nil = approval system disabled
+	toolsListCache *cache.Cache[string, json.RawMessage]
+	notifier       Notifier // set at runtime for sending notifications
+}
+
+// setNotifier sets the notifier for sending client notifications.
+func (h *handler) setNotifier(n Notifier) {
+	h.notifier = n
 }
 
 func newHandler(
@@ -42,12 +57,13 @@ func newHandler(
 	approvals *approval.Manager,
 ) *handler {
 	return &handler{
-		store:     s,
-		engine:    e,
-		manager:   m,
-		sessions:  newSessionManager(s, t),
-		auditor:   a,
-		approvals: approvals,
+		store:          s,
+		engine:         e,
+		manager:        m,
+		sessions:       newSessionManager(s, t),
+		auditor:        a,
+		approvals:      approvals,
+		toolsListCache: cache.New[string, json.RawMessage](10, 15*time.Second),
 	}
 }
 
@@ -103,7 +119,8 @@ func (h *handler) handleToolsList(
 	}
 
 	// Query static servers live for the advertised tool list.
-	liveTools, err := h.manager.ListToolsForServers(ctx, staticIDs)
+	// Use the tools/list cache to avoid hammering downstream servers.
+	liveTools, err := h.cachedListToolsForServers(ctx, staticIDs)
 	if err != nil {
 		return nil, &RPCError{
 			Code:    CodeInternalError,
@@ -128,35 +145,51 @@ func (h *handler) handleToolsList(
 		}
 	}
 
-	// For dynamic servers, serve tools from the capabilities cache so all
-	// clients see them in tools/list without needing to call search_tools.
-	// The cache is populated by: discover API, search_tools, or previous listing.
-	for _, srv := range dynamicServers {
-		if len(srv.CapabilitiesCache) == 0 || string(srv.CapabilitiesCache) == "{}" {
-			continue
+	// For dynamic servers, only include tools that have been explicitly loaded
+	// into the session via load_tools (or from capabilities cache if no session
+	// tools exist yet, for backward compat during transition).
+	activeTools := h.sessions.getActiveTools()
+	if len(activeTools) > 0 {
+		// Session has explicitly loaded tools — use those.
+		tools = append(tools, activeTools...)
+	} else {
+		// No tools loaded yet — fall back to capabilities cache.
+		for _, srv := range dynamicServers {
+			if len(srv.CapabilitiesCache) == 0 || string(srv.CapabilitiesCache) == "{}" {
+				continue
+			}
+			t, err := extractNamespacedTools(srv.ToolNamespace, srv.CapabilitiesCache)
+			if err != nil {
+				slog.Warn("failed to extract cached tools",
+					"server", srv.ID, "error", err)
+				continue
+			}
+			tools = append(tools, t...)
 		}
-		t, err := extractNamespacedTools(srv.ToolNamespace, srv.CapabilitiesCache)
-		if err != nil {
-			slog.Warn("failed to extract cached tools",
-				"server", srv.ID, "error", err)
-			continue
-		}
-		tools = append(tools, t...)
 	}
 
-	// Include the built-in search tool when dynamic servers exist so smart
-	// models can still force a live re-discovery.
+	// Include built-in tools based on server configuration.
 	if len(dynamicServers) > 0 {
 		tools = append(tools, searchToolDefinition())
+		tools = append(tools, loadToolDefinition())
+		tools = append(tools, unloadToolDefinition())
 	}
 
-	// Include approval tools when the approval system is enabled.
 	if h.approvals != nil {
 		tools = append(tools, approvalToolDefinitions()...)
 	}
 
+	if _, ok := h.manager.(CachingCaller); ok {
+		tools = append(tools, flushCacheToolDefinition())
+	}
+
 	// Only advertise tools the current session can actually route to.
 	tools = h.filterByWorkspaceRoutes(ctx, tools)
+
+	// Minify schemas to reduce context window consumption.
+	if slimToolsEnabled() {
+		tools = minifyToolSchemas(tools)
+	}
 
 	result := map[string]any{"tools": tools}
 	data, err := json.Marshal(result)
@@ -187,6 +220,40 @@ func extractNamespacedTools(namespace string, toolsResult json.RawMessage) ([]To
 	return out, nil
 }
 
+// cachedListToolsForServers uses the tools/list cache to avoid hammering
+// downstream servers on rapid tools/list calls. The cache has a 15s TTL.
+func (h *handler) cachedListToolsForServers(ctx context.Context, serverIDs []string) (map[string]json.RawMessage, error) {
+	// Build a cache key from sorted server IDs.
+	key := strings.Join(serverIDs, ",")
+
+	// We cache the aggregate JSON map, keyed by the server ID list.
+	cached, err := h.toolsListCache.GetOrLoad(key, func() (json.RawMessage, error) {
+		result, err := h.manager.ListToolsForServers(ctx, serverIDs)
+		if err != nil {
+			return nil, err
+		}
+		data, err := json.Marshal(result)
+		if err != nil {
+			return nil, err
+		}
+		return data, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	var result map[string]json.RawMessage
+	if err := json.Unmarshal(cached, &result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// ToolsListStats returns cache statistics for the tools/list cache.
+func (h *handler) ToolsListStats() cache.Stats {
+	return h.toolsListCache.Stats()
+}
+
 func (h *handler) handleToolsCall(
 	ctx context.Context, params json.RawMessage,
 ) (json.RawMessage, *RPCError) {
@@ -197,24 +264,31 @@ func (h *handler) handleToolsCall(
 		return nil, &RPCError{Code: CodeInvalidParams, Message: err.Error()}
 	}
 
-	// Handle built-in mcplexer tools before routing.
-	if strings.HasPrefix(req.Name, "mcplexer__") {
-		result, rpcErr := h.handleBuiltinCall(ctx, req)
-		h.recordAudit(ctx, req.Name, req.Arguments, nil, result, rpcErr, start)
-		return result, rpcErr
-	}
+	// Normalize legacy mcplexer__ prefix to mcpx__ for backward compat.
+	req.Name = normalizeBuiltinName(req.Name)
 
 	// Extract namespace from tool name (namespace__toolname).
 	originalTool := extractOriginalToolName(req.Name)
 
-	// Route the call, falling back through ancestor workspaces.
+	// Route ALL tools through the engine (including built-ins).
 	routeResult, err := h.engine.RouteWithFallback(ctx, routing.RouteContext{
 		ToolName: req.Name,
 	}, h.sessions.clientRoot(), h.sessions.workspaceAncestors())
 	if err != nil {
 		rpcErr := mapRouteError(err)
-		h.recordAudit(ctx, req.Name, req.Arguments, nil, nil, rpcErr, start)
+		if errors.Is(err, routing.ErrNoRoute) || errors.Is(err, routing.ErrDenied) {
+			h.recordAuditBlocked(ctx, req.Name, req.Arguments, nil, nil, rpcErr, start)
+		} else {
+			h.recordAudit(ctx, req.Name, req.Arguments, nil, nil, rpcErr, start)
+		}
 		return nil, rpcErr
+	}
+
+	// Dispatch based on whether it's a built-in or downstream tool.
+	if routeResult.DownstreamServerID == "mcpx-builtin" {
+		result, rpcErr := h.handleBuiltinCall(ctx, req)
+		h.recordAudit(ctx, req.Name, req.Arguments, routeResult, result, rpcErr, start)
+		return result, rpcErr
 	}
 
 	// Optional GitHub scope enforcement from route allowlists.
@@ -247,24 +321,57 @@ func (h *handler) handleToolsCall(
 		// Approval granted — fall through to dispatch.
 	}
 
-	// Dispatch to downstream.
-	result, err := h.manager.Call(
-		ctx,
-		routeResult.DownstreamServerID,
-		routeResult.AuthScopeID,
-		originalTool,
-		req.Arguments,
-	)
-	if err != nil {
-		rpcErr := &RPCError{
-			Code:    CodeProcessError,
-			Message: fmt.Sprintf("downstream call: %v", err),
+	// Extract _cache_bust from arguments if present.
+	cacheBust := extractAndRemoveCacheBust(&req.Arguments)
+
+	// Dispatch to downstream, with cache hit detection.
+	var result json.RawMessage
+	var cacheHit bool
+	var cacheAge time.Duration
+
+	if cc, ok := h.manager.(CachingCaller); ok {
+		cr, callErr := cc.CallWithMeta(
+			ctx,
+			routeResult.DownstreamServerID,
+			routeResult.AuthScopeID,
+			originalTool,
+			req.Arguments,
+			cacheBust,
+		)
+		if callErr != nil {
+			rpcErr := &RPCError{
+				Code:    CodeProcessError,
+				Message: fmt.Sprintf("downstream call: %v", callErr),
+			}
+			h.recordAudit(ctx, req.Name, req.Arguments, routeResult, nil, rpcErr, start)
+			return nil, rpcErr
 		}
-		h.recordAudit(ctx, req.Name, req.Arguments, routeResult, nil, rpcErr, start)
-		return nil, rpcErr
+		result = cr.Data
+		cacheHit = cr.CacheHit
+		cacheAge = cr.CacheAge
+	} else {
+		var callErr error
+		result, callErr = h.manager.Call(
+			ctx,
+			routeResult.DownstreamServerID,
+			routeResult.AuthScopeID,
+			originalTool,
+			req.Arguments,
+		)
+		if callErr != nil {
+			rpcErr := &RPCError{
+				Code:    CodeProcessError,
+				Message: fmt.Sprintf("downstream call: %v", callErr),
+			}
+			h.recordAudit(ctx, req.Name, req.Arguments, routeResult, nil, rpcErr, start)
+			return nil, rpcErr
+		}
 	}
 
-	h.recordAudit(ctx, req.Name, req.Arguments, routeResult, result, nil, start)
+	// Inject cache metadata into the tool result.
+	result = injectCacheMeta(result, cacheHit, cacheAge)
+
+	h.recordAuditWithCache(ctx, req.Name, req.Arguments, routeResult, result, nil, start, cacheHit)
 	return result, nil
 }
 
@@ -299,7 +406,7 @@ func (h *handler) handleApprovalGate(
 				"Retry your call with an additional `_justification` field " +
 				"explaining why you need to use this tool.",
 		)
-		h.recordAudit(ctx, req.Name, req.Arguments, route, result, nil, start)
+		h.recordAuditBlocked(ctx, req.Name, req.Arguments, route, result, nil, start)
 		return result, nil
 	}
 
@@ -318,6 +425,7 @@ func (h *handler) handleApprovalGate(
 		RequestClientType:  h.sessions.clientType(),
 		RequestModel:       h.sessions.modelHint(),
 		WorkspaceID:        h.sessions.workspaceID(),
+		WorkspaceName:      h.sessions.workspaceName(),
 		ToolName:           req.Name,
 		Arguments:          string(cleanArgs),
 		Justification:      justification,
@@ -341,7 +449,7 @@ func (h *handler) handleApprovalGate(
 		result := marshalErrorResult(
 			fmt.Sprintf("Tool call denied. Reason: %s", rec.Resolution),
 		)
-		h.recordAudit(ctx, req.Name, req.Arguments, route, result, nil, start)
+		h.recordAuditBlocked(ctx, req.Name, req.Arguments, route, result, nil, start)
 		return result, nil
 	}
 
@@ -359,13 +467,34 @@ func (h *handler) recordAudit(
 	rpcErr *RPCError,
 	start time.Time,
 ) {
+	h.recordAuditWithCache(ctx, toolName, params, route, result, rpcErr, start, false)
+}
+
+// recordAuditWithCache creates and persists an audit record with cache hit info.
+func (h *handler) recordAuditWithCache(
+	ctx context.Context,
+	toolName string,
+	params json.RawMessage,
+	route *routing.RouteResult,
+	result json.RawMessage,
+	rpcErr *RPCError,
+	start time.Time,
+	cacheHit bool,
+) {
 	if h.auditor == nil {
 		return
 	}
 
-	// Compute subpath relative to the primary workspace root for audit.
+	// Use the workspace and subpath from the route match when available,
+	// falling back to the primary workspace for built-in/unrouted calls.
+	wsID := h.sessions.workspaceID()
+	wsName := h.sessions.workspaceName()
 	var subpath string
-	if ancestors := h.sessions.workspaceAncestors(); len(ancestors) > 0 {
+	if route != nil && route.MatchedWorkspaceID != "" {
+		wsID = route.MatchedWorkspaceID
+		wsName = route.MatchedWorkspaceName
+		subpath = route.Subpath
+	} else if ancestors := h.sessions.workspaceAncestors(); len(ancestors) > 0 {
 		subpath = routing.ComputeSubpath(h.sessions.clientRoot(), ancestors[0].RootPath)
 	}
 
@@ -375,13 +504,15 @@ func (h *handler) recordAudit(
 		SessionID:      h.sessions.sessionID(),
 		ClientType:     h.sessions.clientType(),
 		Model:          h.sessions.modelHint(),
-		WorkspaceID:    h.sessions.workspaceID(),
+		WorkspaceID:    wsID,
+		WorkspaceName:  wsName,
 		Subpath:        subpath,
 		ToolName:       toolName,
 		ParamsRedacted: params,
 		Status:         "success",
 		LatencyMs:      int(time.Since(start).Milliseconds()),
 		ResponseSize:   len(result),
+		CacheHit:       cacheHit,
 	}
 
 	if route != nil {
@@ -405,11 +536,72 @@ func (h *handler) recordAudit(
 	}
 }
 
+// recordAuditBlocked creates an audit record with status "blocked" for route
+// denials, approval gates, and other policy-level rejections.
+func (h *handler) recordAuditBlocked(
+	ctx context.Context,
+	toolName string,
+	params json.RawMessage,
+	route *routing.RouteResult,
+	result json.RawMessage,
+	rpcErr *RPCError,
+	start time.Time,
+) {
+	if h.auditor == nil {
+		return
+	}
+
+	wsID := h.sessions.workspaceID()
+	wsName := h.sessions.workspaceName()
+	var subpath string
+	if route != nil && route.MatchedWorkspaceID != "" {
+		wsID = route.MatchedWorkspaceID
+		wsName = route.MatchedWorkspaceName
+		subpath = route.Subpath
+	} else if ancestors := h.sessions.workspaceAncestors(); len(ancestors) > 0 {
+		subpath = routing.ComputeSubpath(h.sessions.clientRoot(), ancestors[0].RootPath)
+	}
+
+	rec := &store.AuditRecord{
+		ID:             uuid.NewString(),
+		Timestamp:      start,
+		SessionID:      h.sessions.sessionID(),
+		ClientType:     h.sessions.clientType(),
+		Model:          h.sessions.modelHint(),
+		WorkspaceID:    wsID,
+		WorkspaceName:  wsName,
+		Subpath:        subpath,
+		ToolName:       toolName,
+		ParamsRedacted: params,
+		Status:         "blocked",
+		LatencyMs:      int(time.Since(start).Milliseconds()),
+		ResponseSize:   len(result),
+	}
+
+	if route != nil {
+		rec.RouteRuleID = route.MatchedRuleID
+		rec.DownstreamServerID = route.DownstreamServerID
+		rec.AuthScopeID = route.AuthScopeID
+	}
+
+	if rpcErr != nil {
+		rec.ErrorCode = fmt.Sprintf("%d", rpcErr.Code)
+		rec.ErrorMessage = rpcErr.Message
+	} else if isToolError(result) {
+		rec.ErrorCode = "blocked"
+		rec.ErrorMessage = extractToolErrorText(result)
+	}
+
+	if err := h.auditor.Record(ctx, rec); err != nil {
+		slog.Error("audit record failed", "error", err)
+	}
+}
+
 func (h *handler) handleBuiltinCall(
 	ctx context.Context, req CallToolRequest,
 ) (json.RawMessage, *RPCError) {
 	switch req.Name {
-	case "mcplexer__search_tools":
+	case "mcpx__search_tools":
 		var args struct {
 			Query string `json:"query"`
 		}
@@ -418,10 +610,28 @@ func (h *handler) handleBuiltinCall(
 		}
 		return h.handleSearchTools(ctx, args.Query)
 
-	case "mcplexer__list_pending_approvals":
+	case "mcpx__load_tools":
+		var args struct {
+			Tools []string `json:"tools"`
+		}
+		if err := json.Unmarshal(req.Arguments, &args); err != nil {
+			return nil, &RPCError{Code: CodeInvalidParams, Message: err.Error()}
+		}
+		return h.handleLoadTools(ctx, args.Tools)
+
+	case "mcpx__unload_tools":
+		var args struct {
+			Tools []string `json:"tools"`
+		}
+		if err := json.Unmarshal(req.Arguments, &args); err != nil {
+			return nil, &RPCError{Code: CodeInvalidParams, Message: err.Error()}
+		}
+		return h.handleUnloadTools(args.Tools)
+
+	case "mcpx__list_pending_approvals":
 		return h.handleListPendingApprovals()
 
-	case "mcplexer__approve_tool_call":
+	case "mcpx__approve_tool_call":
 		var args struct {
 			ApprovalID string `json:"approval_id"`
 			Reason     string `json:"reason"`
@@ -431,7 +641,7 @@ func (h *handler) handleBuiltinCall(
 		}
 		return h.handleResolveApproval(args.ApprovalID, args.Reason, true)
 
-	case "mcplexer__deny_tool_call":
+	case "mcpx__deny_tool_call":
 		var args struct {
 			ApprovalID string `json:"approval_id"`
 			Reason     string `json:"reason"`
@@ -444,12 +654,35 @@ func (h *handler) handleBuiltinCall(
 		}
 		return h.handleResolveApproval(args.ApprovalID, args.Reason, false)
 
+	case "mcpx__flush_cache":
+		var args struct {
+			ServerID string `json:"server_id"`
+		}
+		if len(req.Arguments) > 0 {
+			_ = json.Unmarshal(req.Arguments, &args)
+		}
+		return h.handleFlushCache(args.ServerID)
+
 	default:
 		return nil, &RPCError{
 			Code:    CodeMethodNotFound,
 			Message: fmt.Sprintf("unknown built-in: %s", req.Name),
 		}
 	}
+}
+
+func (h *handler) handleFlushCache(serverID string) (json.RawMessage, *RPCError) {
+	cc, ok := h.manager.(CachingCaller)
+	if !ok {
+		return marshalErrorResult("Cache system is not enabled."), nil
+	}
+	tc := cc.ToolCache()
+	if serverID != "" {
+		tc.InvalidateServer(serverID)
+		return marshalToolResult(fmt.Sprintf("Flushed cache for server %q.", serverID)), nil
+	}
+	tc.Flush()
+	return marshalToolResult("Flushed all tool call cache entries."), nil
 }
 
 func (h *handler) handleListPendingApprovals() (json.RawMessage, *RPCError) {
@@ -557,4 +790,68 @@ func mapRouteError(err error) *RPCError {
 	default:
 		return &RPCError{Code: CodeInternalError, Message: err.Error()}
 	}
+}
+
+// extractAndRemoveCacheBust checks for a _cache_bust boolean in the
+// tool call arguments and removes it before forwarding downstream.
+func extractAndRemoveCacheBust(args *json.RawMessage) bool {
+	if args == nil || len(*args) == 0 {
+		return false
+	}
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(*args, &m); err != nil {
+		return false
+	}
+	raw, ok := m["_cache_bust"]
+	if !ok {
+		return false
+	}
+	var bust bool
+	if err := json.Unmarshal(raw, &bust); err != nil || !bust {
+		return false
+	}
+	delete(m, "_cache_bust")
+	cleaned, err := json.Marshal(m)
+	if err != nil {
+		return false
+	}
+	*args = cleaned
+	return true
+}
+
+// injectCacheMeta adds a _cache field to the MCP tool result _meta object
+// so the AI can see whether the response was served from cache and how old it is.
+func injectCacheMeta(result json.RawMessage, cacheHit bool, cacheAge time.Duration) json.RawMessage {
+	if len(result) == 0 {
+		return result
+	}
+
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal(result, &envelope); err != nil {
+		return result
+	}
+
+	cacheMeta := map[string]any{
+		"cached": cacheHit,
+	}
+	if cacheHit {
+		cacheMeta["age_seconds"] = int(cacheAge.Seconds())
+	}
+
+	// Merge into existing _meta or create it.
+	meta := make(map[string]json.RawMessage)
+	if raw, ok := envelope["_meta"]; ok {
+		_ = json.Unmarshal(raw, &meta)
+	}
+	cacheJSON, _ := json.Marshal(cacheMeta)
+	meta["cache"] = cacheJSON
+
+	metaJSON, _ := json.Marshal(meta)
+	envelope["_meta"] = metaJSON
+
+	out, err := json.Marshal(envelope)
+	if err != nil {
+		return result
+	}
+	return out
 }

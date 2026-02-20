@@ -87,6 +87,12 @@ type AuditStore interface {
 	QueryAuditRecords(ctx context.Context, f AuditFilter) ([]AuditRecord, int, error)
 	GetAuditStats(ctx context.Context, workspaceID string, after, before time.Time) (*AuditStats, error)
 	GetDashboardTimeSeries(ctx context.Context, after, before time.Time) ([]TimeSeriesPoint, error)
+	GetDashboardTimeSeriesBucketed(ctx context.Context, after, before time.Time, bucketSec int) ([]TimeSeriesPoint, error)
+	GetToolLeaderboard(ctx context.Context, after, before time.Time, limit int) ([]ToolLeaderboardEntry, error)
+	GetServerHealth(ctx context.Context, after, before time.Time) ([]ServerHealthEntry, error)
+	GetErrorBreakdown(ctx context.Context, after, before time.Time, limit int) ([]ErrorBreakdownEntry, error)
+	GetRouteHitMap(ctx context.Context, after, before time.Time) ([]RouteHitEntry, error)
+	GetAuditCacheStats(ctx context.Context, after, before time.Time) (*AuditCacheStats, error)
 }
 
 // ToolApprovalStore manages tool call approval records.
@@ -96,4 +102,5 @@ type ToolApprovalStore interface {
 	ListPendingApprovals(ctx context.Context) ([]ToolApproval, error)
 	ResolveToolApproval(ctx context.Context, id, status, approverSessionID, approverType, resolution string) error
 	ExpirePendingApprovals(ctx context.Context, before time.Time) (int, error)
+	GetApprovalMetrics(ctx context.Context, after, before time.Time) (*ApprovalMetrics, error)
 }

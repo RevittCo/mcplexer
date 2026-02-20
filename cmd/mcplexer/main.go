@@ -22,6 +22,7 @@ import (
 	"github.com/revittco/mcplexer/internal/approval"
 	"github.com/revittco/mcplexer/internal/audit"
 	"github.com/revittco/mcplexer/internal/auth"
+	"github.com/revittco/mcplexer/internal/cache"
 	"github.com/revittco/mcplexer/internal/config"
 	"github.com/revittco/mcplexer/internal/control"
 	"github.com/revittco/mcplexer/internal/downstream"
@@ -155,6 +156,8 @@ func runHTTP(ctx context.Context, cfg *Config, db *sqlite.DB, cfgSvc *config.Ser
 	manager := downstream.NewManager(db, authInj)
 	defer manager.Shutdown(ctx) //nolint:errcheck
 
+	tc := buildToolCache(ctx, db)
+
 	approvalBus := approval.NewBus()
 	approvalMgr := approval.NewManager(db, approvalBus)
 	approvalMgr.ExpireStale(ctx)
@@ -171,6 +174,7 @@ func runHTTP(ctx context.Context, cfg *Config, db *sqlite.DB, cfgSvc *config.Ser
 		AuditBus:        auditBus,
 		ApprovalManager: approvalMgr,
 		ApprovalBus:     approvalBus,
+		ToolCache:       tc,
 	})
 
 	srv := &http.Server{
@@ -206,15 +210,43 @@ func runStdio(ctx context.Context, cfg *Config, db *sqlite.DB) error {
 	manager := downstream.NewManager(db, authInj)
 	defer manager.Shutdown(ctx) //nolint:errcheck
 
+	tc := buildToolCache(ctx, db)
+	lister := cache.NewCachingToolLister(manager, tc)
+
 	approvalBus := approval.NewBus()
 	approvalMgr := approval.NewManager(db, approvalBus)
 	approvalMgr.ExpireStale(ctx)
 	defer approvalMgr.Shutdown()
 
 	auditor := audit.NewLogger(db, db, nil)
-	gw := gateway.NewServer(db, engine, manager, auditor, gateway.TransportStdio,
+	gw := gateway.NewServer(db, engine, lister, auditor, gateway.TransportStdio,
 		gateway.WithApprovals(approvalMgr))
 	return gw.RunStdio(ctx)
+}
+
+// buildToolCache loads per-server cache configs from the DB and creates a ToolCache.
+func buildToolCache(ctx context.Context, db *sqlite.DB) *cache.ToolCache {
+	servers, err := db.ListDownstreamServers(ctx)
+	if err != nil {
+		slog.Warn("failed to load servers for cache config, using defaults", "error", err)
+		return cache.NewToolCache(nil)
+	}
+
+	configs := make(map[string]cache.ServerCacheConfig, len(servers))
+	for _, srv := range servers {
+		if len(srv.CacheConfig) == 0 || string(srv.CacheConfig) == "{}" {
+			continue
+		}
+		var cfg cache.ServerCacheConfig
+		if err := json.Unmarshal(srv.CacheConfig, &cfg); err != nil {
+			slog.Warn("invalid cache config for server, using defaults",
+				"server", srv.ID, "error", err)
+			continue
+		}
+		configs[srv.ID] = cfg
+	}
+
+	return cache.NewToolCache(configs)
 }
 
 // buildAuthInjector creates an auth.Injector and optionally an oauth.FlowManager.
@@ -531,6 +563,9 @@ func runHTTPAndSocket(ctx context.Context, cfg *Config, db *sqlite.DB, cfgSvc *c
 	manager := downstream.NewManager(db, authInj)
 	defer manager.Shutdown(ctx) //nolint:errcheck
 
+	tc := buildToolCache(ctx, db)
+	lister := cache.NewCachingToolLister(manager, tc)
+
 	approvalBus := approval.NewBus()
 	approvalMgr := approval.NewManager(db, approvalBus)
 	approvalMgr.ExpireStale(ctx)
@@ -552,6 +587,7 @@ func runHTTPAndSocket(ctx context.Context, cfg *Config, db *sqlite.DB, cfgSvc *c
 			AuditBus:        auditBus,
 			ApprovalManager: approvalMgr,
 			ApprovalBus:     approvalBus,
+			ToolCache:       tc,
 		})
 		srv := &http.Server{Addr: cfg.HTTPAddr, Handler: router}
 		errCh := make(chan error, 1)
@@ -572,7 +608,7 @@ func runHTTPAndSocket(ctx context.Context, cfg *Config, db *sqlite.DB, cfgSvc *c
 
 	// Unix socket listener
 	g.Go(func() error {
-		return runSocket(ctx, cfg.SocketPath, db, engine, manager, auditor, approvalMgr)
+		return runSocket(ctx, cfg.SocketPath, db, engine, lister, auditor, approvalMgr)
 	})
 
 	return g.Wait()
@@ -585,7 +621,7 @@ func runSocket(
 	path string,
 	s *sqlite.DB,
 	engine *routing.Engine,
-	manager *downstream.Manager,
+	lister gateway.ToolLister,
 	auditor *audit.Logger,
 	approvalMgr *approval.Manager,
 ) error {
@@ -622,7 +658,7 @@ func runSocket(
 			}
 			return fmt.Errorf("accept: %w", err)
 		}
-		go handleSocketConn(ctx, conn, s, engine, manager, auditor, approvalMgr)
+		go handleSocketConn(ctx, conn, s, engine, lister, auditor, approvalMgr)
 	}
 }
 
@@ -631,14 +667,14 @@ func handleSocketConn(
 	conn net.Conn,
 	s *sqlite.DB,
 	engine *routing.Engine,
-	manager *downstream.Manager,
+	lister gateway.ToolLister,
 	auditor *audit.Logger,
 	approvalMgr *approval.Manager,
 ) {
 	defer conn.Close()
 	slog.Info("socket connection accepted", "remote", conn.RemoteAddr())
 
-	gw := gateway.NewServer(s, engine, manager, auditor, gateway.TransportSocket,
+	gw := gateway.NewServer(s, engine, lister, auditor, gateway.TransportSocket,
 		gateway.WithApprovals(approvalMgr))
 	if err := gw.RunConn(ctx, conn, conn); err != nil {
 		slog.Error("socket connection error", "err", err)

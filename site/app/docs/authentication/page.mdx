@@ -1,0 +1,168 @@
+import { Callout } from "@/components/docs/callout";
+import { TerminalBlock } from "@/components/docs/terminal-block";
+import { PropTable } from "@/components/docs/prop-table";
+import { PrevNextNav } from "@/components/docs/prev-next-nav";
+
+# Authentication
+
+MCPlexer injects credentials into downstream server connections so you can manage access centrally. Auth scopes define **what credentials** to inject and **how** — environment variables for stdio servers or HTTP headers for remote ones.
+
+## Auth Scope Fields
+
+<PropTable props={[
+  { name: "id", type: "string", description: "Unique identifier" },
+  { name: "name", type: "string", description: "Human-readable display name" },
+  { name: "type", type: "\"env\" | \"header\" | \"oauth2\"", description: "Credential injection method" },
+  { name: "encrypted_data", type: "bytes", description: "age-encrypted credential payload" },
+  { name: "redaction_hints", type: "string[]", description: "Parameter names to redact in audit logs" },
+  { name: "oauth_provider_id", type: "string", description: "Linked OAuth provider (oauth2 type only)" },
+  { name: "oauth_token_data", type: "bytes", description: "Encrypted OAuth token storage (managed automatically)" },
+  { name: "source", type: "\"yaml\" | \"api\" | \"seed\"", description: "How this scope was created" },
+]} />
+
+## Auth Scope Types
+
+### Environment Variables (`env`)
+
+For **stdio** transport servers. MCPlexer injects key-value pairs as environment variables when spawning the downstream process.
+
+```yaml
+auth_scopes:
+  - name: "GitHub Token"
+    type: env
+    # Secret values set via CLI or UI — never in YAML
+```
+
+After creating the scope, set the secret:
+
+<TerminalBlock title="terminal">
+{`mcplexer secret put github-token GITHUB_PERSONAL_ACCESS_TOKEN ghp_xxxxxxxxxxxx`}
+</TerminalBlock>
+
+When the GitHub MCP server starts, it receives `GITHUB_PERSONAL_ACCESS_TOKEN=ghp_xxxxxxxxxxxx` in its environment.
+
+### HTTP Headers (`header`)
+
+For **http** transport servers. MCPlexer adds headers to every request forwarded to the downstream server.
+
+```yaml
+auth_scopes:
+  - name: "API Key"
+    type: header
+```
+
+<TerminalBlock title="terminal">
+{`mcplexer secret put api-key Authorization "Bearer sk-xxxxxxxxxxxx"`}
+</TerminalBlock>
+
+### OAuth2 (`oauth2`)
+
+For servers that need **OAuth2 tokens**. MCPlexer handles the full authorization flow including PKCE, token storage, and automatic refresh.
+
+## OAuth2 + PKCE Flow
+
+MCPlexer implements the OAuth2 Authorization Code flow with PKCE (Proof Key for Code Exchange) for secure token acquisition:
+
+1. **Initiate** — via the web UI or API, MCPlexer generates a PKCE challenge and redirects the user to the provider's authorization page
+2. **Authorize** — the user grants access in the provider's UI
+3. **Callback** — the provider redirects back to MCPlexer with an authorization code
+4. **Exchange** — MCPlexer exchanges the code + PKCE verifier for access and refresh tokens
+5. **Store** — tokens are encrypted with age and stored in the database
+6. **Inject** — on each tool call, MCPlexer injects the access token (as env var or header, depending on the downstream transport)
+
+### Automatic Token Refresh
+
+When an access token expires, MCPlexer automatically uses the refresh token to obtain a new one. This happens transparently — no user interaction required. If the refresh token itself expires, the user is prompted to re-authorize.
+
+## Provider Templates
+
+MCPlexer ships with built-in OAuth provider templates for popular services. These pre-configure the authorization URL, token URL, and default scopes:
+
+| Provider | Auth URL | Default Scopes |
+|----------|----------|----------------|
+| **GitHub** | github.com/login/oauth | `repo`, `read:org` |
+| **GitLab** | gitlab.com/oauth | `api`, `read_user` |
+| **Google** | accounts.google.com/o/oauth2 | `openid`, `email` |
+| **Notion** | api.notion.com/v1/oauth | — |
+| **Linear** | linear.app/oauth | `read`, `write` |
+| **ClickUp** | app.clickup.com/api | — |
+| **Microsoft** | login.microsoftonline.com | `User.Read` |
+
+<Callout type="tip" title="Quick Setup">
+When using a built-in provider template, you only need to supply your **client ID** and **client secret**. MCPlexer fills in the authorization URLs, token endpoints, and default scopes automatically.
+</Callout>
+
+### Quick Setup
+
+1. Navigate to **Config > Auth Scopes** in the web UI
+2. Click **Add Auth Scope** and select type **OAuth2**
+3. Choose a provider template (e.g., GitHub)
+4. Enter your OAuth app's **Client ID** and **Client Secret**
+5. Click **Authorize** — you'll be redirected to the provider
+6. Grant access and you'll be redirected back to MCPlexer
+7. Link the auth scope to a route rule via `auth_scope_id`
+
+### Manual Configuration
+
+For providers not in the template list, configure the OAuth provider manually:
+
+```yaml
+oauth_providers:
+  - name: "Custom Provider"
+    auth_url: "https://auth.example.com/authorize"
+    token_url: "https://auth.example.com/token"
+    scopes: ["read", "write"]
+```
+
+Then create an auth scope linked to this provider:
+
+```yaml
+auth_scopes:
+  - name: "Custom OAuth"
+    type: oauth2
+    oauth_provider_id: custom-provider
+```
+
+## Credential Injection
+
+How credentials reach the downstream server depends on the transport:
+
+| Transport | `env` type | `header` type | `oauth2` type |
+|-----------|-----------|---------------|---------------|
+| **stdio** | Env vars on process | N/A | Token as env var |
+| **http** | N/A | HTTP headers | `Authorization: Bearer` header |
+
+<Callout type="warning" title="Transport compatibility">
+The `env` type only works with stdio servers (credentials are process environment variables). The `header` type only works with HTTP servers. OAuth2 adapts to the transport automatically.
+</Callout>
+
+## Redaction Hints
+
+Auth scopes support `redaction_hints` — a list of parameter names that should be scrubbed from audit logs. This prevents sensitive data from appearing in logs even when full request/response logging is enabled.
+
+```yaml
+auth_scopes:
+  - name: "GitHub Token"
+    type: env
+    redaction_hints: ["GITHUB_PERSONAL_ACCESS_TOKEN", "password", "secret"]
+```
+
+When audit logging encounters these parameter names in tool call arguments or responses, their values are replaced with `[REDACTED]`.
+
+## Linking Auth Scopes to Routes
+
+Auth scopes are connected to downstream servers through **route rules**. Set the `auth_scope_id` on a route rule to specify which credentials to inject when that rule matches:
+
+```yaml
+route_rules:
+  - name: "GitHub with personal token"
+    workspace_id: default
+    tool_match: ["github__*"]
+    downstream_server_id: github
+    auth_scope_id: github-personal-token
+    policy: allow
+```
+
+This means different workspaces or route rules can use **different credentials** for the same downstream server — for example, a personal token for development and an org token for production.
+
+<PrevNextNav />

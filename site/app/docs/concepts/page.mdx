@@ -1,0 +1,120 @@
+import { Callout } from "@/components/docs/callout";
+import { TerminalBlock } from "@/components/docs/terminal-block";
+import { PrevNextNav } from "@/components/docs/prev-next-nav";
+
+# Architecture & Concepts
+
+MCPlexer is a gateway that multiplexes connections between a single AI client and multiple downstream MCP servers. It handles routing, authentication, namespacing, approvals, and audit logging.
+
+## Where MCPlexer Sits
+
+MCPlexer runs as a local process between your AI client and the MCP servers you want to use. Instead of configuring each MCP server individually in your client, you configure them once in MCPlexer and expose a single MCP interface.
+
+<TerminalBlock title="request flow">
+{`AI Client (Claude, Cursor, etc.)
+    │
+    │  stdio / HTTP / socket
+    ▼
+MCPlexer Gateway
+    │
+    ├─── Workspace Resolution
+    │       Which security context applies?
+    │
+    ├─── Route Matching
+    │       Which downstream handles this tool?
+    │
+    ├─── Auth Injection
+    │       What credentials does this call need?
+    │
+    ├─── Approval Check
+    │       Does this tool require user approval?
+    │
+    ├─── Downstream Dispatch
+    │       Forward to the correct MCP server
+    │
+    └─── Audit Logging
+            Record the call with secrets redacted`}
+</TerminalBlock>
+
+## Request Lifecycle
+
+Every tool call follows this path:
+
+1. **Client request arrives** — A JSON-RPC `tools/call` message is received over the configured transport
+2. **Workspace resolution** — MCPlexer matches the client's working directory against workspace root paths to determine the active security context
+3. **Tool lookup** — The namespaced tool name (e.g., `github__create_issue`) is parsed to identify the target downstream server
+4. **Route evaluation** — Route rules are evaluated in priority order with deny-first semantics. The first matching allow rule determines the downstream and auth scope
+5. **Approval gate** — If the tool requires approval, the request is held until a human approves or denies it
+6. **Auth injection** — The matched auth scope injects credentials (env vars, headers, or OAuth tokens) into the downstream request
+7. **Downstream dispatch** — MCPlexer forwards the request to the downstream MCP server process
+8. **Response relay** — The downstream response is relayed back to the AI client
+9. **Audit log** — The complete request/response is recorded with sensitive values redacted
+
+## Key Terms
+
+| Term | Definition |
+|------|------------|
+| **Workspace** | A directory-scoped security context. Defined by a root path (e.g., `/home/user/project`). The workspace whose root path is the longest prefix of the client's working directory wins. Each workspace has a default policy — `allow` or `deny`. |
+| **Downstream Server** | An MCP server that MCPlexer manages. Can be stdio-based (MCPlexer spawns and manages the process) or HTTP-based (MCPlexer connects to an existing endpoint). Each server has a unique namespace. |
+| **Namespace** | A prefix applied to all tools from a downstream server. Tool names are always `{namespace}__{toolname}`. This prevents collisions when multiple servers expose tools with the same name. |
+| **Route Rule** | A rule that matches workspace + path glob + tool pattern to a downstream server. Rules have a priority, a policy (allow/deny), and an optional auth scope. Deny rules always take precedence over allow rules at the same priority. |
+| **Auth Scope** | A named credential container. Can hold environment variables, HTTP headers, or OAuth provider references. Auth scopes are attached to route rules and injected into downstream calls. |
+| **Policy** | Either `allow` or `deny`. Evaluation is deny-first: if any matching rule denies, the call is blocked regardless of other allow rules. If no rules match, the workspace default policy applies. |
+| **Tool Approval** | A gate that requires human confirmation before a tool call proceeds. Configured per-tool or per-pattern. Approvals can be one-time or remembered for a session. |
+| **Audit Log** | A record of every tool call, including the request, response, matched route, auth scope, and timing. Secrets and sensitive values are automatically redacted. |
+
+## Transport Modes
+
+MCPlexer supports three transport modes for the connection between the AI client and the gateway.
+
+### stdio (Default)
+
+The client spawns MCPlexer as a child process and communicates over stdin/stdout. This is the standard MCP transport used by Claude Desktop, Cursor, and most MCP clients.
+
+<TerminalBlock title="terminal">
+{`mcplexer serve --mode=stdio`}
+</TerminalBlock>
+
+**When to use:** Single-client setups where the AI client manages the MCPlexer process directly. This is the simplest and most common mode.
+
+### HTTP
+
+MCPlexer runs as a persistent HTTP server with a REST API and WebSocket support. The web dashboard is available in this mode.
+
+<TerminalBlock title="terminal">
+{`mcplexer serve --mode=http --addr=:8080`}
+</TerminalBlock>
+
+**When to use:** When you need the web dashboard, REST API access, or want MCPlexer running as a long-lived service. Required for multi-client or remote access scenarios.
+
+### Socket
+
+MCPlexer runs as a daemon listening on a Unix socket. Each connecting client gets an isolated stdio-like session. The `mcplexer connect` command bridges a client's stdin/stdout to the daemon socket.
+
+<TerminalBlock title="terminal">
+{`# Start the daemon
+mcplexer daemon start
+
+# Connect a client
+mcplexer connect --socket=/path/to/socket`}
+</TerminalBlock>
+
+**When to use:** When you want a persistent daemon with per-connection isolation. Useful for Docker containers, shared servers, or when multiple clients need independent sessions through the same MCPlexer instance.
+
+<Callout type="info" title="Downstream transport is separate">
+  The transport between MCPlexer and its downstream servers is configured per-server — a downstream can use stdio or HTTP regardless of how the AI client connects to MCPlexer.
+</Callout>
+
+## Process Management
+
+MCPlexer manages the lifecycle of stdio-based downstream servers:
+
+- **Lazy spawning** — Processes start on first tool call, not at gateway startup
+- **Idle timeout** — Processes shut down after a configurable period of inactivity
+- **Crash recovery** — Failed processes are automatically restarted with backoff
+- **Instance limits** — Each downstream has a configurable `max_instances` cap
+- **Queue management** — Requests queue when all instances are busy
+
+Each downstream process is uniquely keyed by `(server_id, auth_scope_id)`, so the same server definition can run multiple instances with different credentials.
+
+<PrevNextNav />

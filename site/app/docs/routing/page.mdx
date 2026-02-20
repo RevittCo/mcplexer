@@ -1,0 +1,203 @@
+import { Callout } from "@/components/docs/callout";
+import { TerminalBlock } from "@/components/docs/terminal-block";
+import { PropTable } from "@/components/docs/prop-table";
+import { PrevNextNav } from "@/components/docs/prev-next-nav";
+
+# Routing Engine
+
+The routing engine is MCPlexer's decision layer. When a tool call arrives, the engine evaluates route rules to determine whether the call is allowed, denied, or requires approval — and which downstream server handles it.
+
+## Route Rule Fields
+
+<PropTable props={[
+  { name: "id", type: "string", description: "Unique identifier" },
+  { name: "name", type: "string", description: "Human-readable rule name for display and audit logs" },
+  { name: "priority", type: "integer", default: "100", description: "Evaluation order — lower number means higher priority" },
+  { name: "workspace_id", type: "string", description: "The workspace this rule belongs to" },
+  { name: "path_glob", type: "string", default: "\"**\"", description: "Glob pattern matched against the computed subpath within the workspace" },
+  { name: "tool_match", type: "string[]", default: "[\"*\"]", description: "Glob patterns matched against the full namespaced tool name" },
+  { name: "allowed_orgs", type: "string[]", description: "GitHub organization allowlist — only requests from these orgs are permitted" },
+  { name: "allowed_repos", type: "string[]", description: "GitHub repository allowlist in \"owner/repo\" format" },
+  { name: "downstream_server_id", type: "string", description: "Which downstream server handles matching tool calls" },
+  { name: "auth_scope_id", type: "string", description: "Auth scope to use for credential injection on matched calls" },
+  { name: "policy", type: "\"allow\" | \"deny\"", description: "Whether this rule permits or blocks matching tool calls" },
+  { name: "log_level", type: "string", default: "\"info\"", description: "Audit log verbosity for calls matching this rule" },
+  { name: "requires_approval", type: "boolean", default: "false", description: "When true, matching tool calls are held for human approval before execution" },
+  { name: "approval_timeout", type: "integer", default: "300", description: "Seconds to wait for approval before auto-denying" },
+  { name: "source", type: "\"yaml\" | \"api\" | \"seed\"", description: "How this rule was created" },
+]} />
+
+## Evaluation Model
+
+### Deny-First
+
+At each priority level, **deny rules are evaluated before allow rules**. If a deny rule matches, the tool call is immediately blocked — no further rules are checked.
+
+```
+Priority 10:  deny rules → allow rules
+Priority 20:  deny rules → allow rules
+Priority 100: deny rules → allow rules
+...
+```
+
+This ensures that security restrictions always take precedence over permissive rules at the same priority.
+
+### Priority System
+
+Rules are evaluated in **ascending priority order** (lower number = higher priority). Within the same priority, deny rules come first.
+
+| Priority | Typical Use |
+|----------|-------------|
+| 1–10 | Critical security overrides (global deny rules) |
+| 10–50 | Project-specific restrictions |
+| 50–100 | Standard allow/deny rules |
+| 100+ | Broad fallback rules |
+
+<Callout type="tip" title="Leave gaps in priority numbers">
+Use increments of 10 or more between rules. This gives you room to insert new rules later without renumbering everything.
+</Callout>
+
+### Short-Circuit Behavior
+
+Once a matching rule is found, evaluation stops. The first match wins. If no rule matches in any workspace (after fallback), the workspace's `default_policy` applies.
+
+## Path Glob Matching
+
+The `path_glob` field uses Go's `filepath.Match` patterns against the **subpath** — the client's CWD relative to the workspace root.
+
+| Pattern | Matches |
+|---------|---------|
+| `**` | Everything (default) |
+| `src/**` | Anything under the `src/` directory |
+| `*.go` | Go files in the workspace root |
+| `tests/*` | Direct children of `tests/` |
+| `migrations/**` | All migration files recursively |
+
+### Example
+
+```
+Workspace root:  /home/user/projects/acme
+Client CWD:      /home/user/projects/acme/src/handlers
+Computed subpath: src/handlers
+
+path_glob: "src/**"     → matches ✓
+path_glob: "tests/**"   → no match ✗
+path_glob: "**"          → matches ✓
+```
+
+## Tool Pattern Matching
+
+The `tool_match` field takes an array of glob patterns matched against the **full namespaced tool name** (e.g., `github__create_issue`).
+
+| Pattern | Matches |
+|---------|---------|
+| `*` | All tools from all servers |
+| `github__*` | All GitHub tools |
+| `*__list_*` | Any tool starting with "list_" from any server |
+| `github__create_issue` | Exactly one specific tool |
+| `fs__write_*` | Filesystem write tools |
+
+Multiple patterns in the array are OR-matched — a tool call matches if it matches **any** pattern.
+
+### Namespace-Aware Matching
+
+Route rules are inherently namespace-aware because tool names always include the namespace prefix. A rule targeting `github__*` will only match tools from the GitHub downstream server.
+
+<Callout type="info" title="Rule-to-server binding">
+A route rule's `downstream_server_id` must correspond to the namespace in its `tool_match` patterns. MCPlexer validates this — a rule targeting `github__*` must point to the downstream server with `tool_namespace: "github"`.
+</Callout>
+
+## Workspace Ancestor Fallback
+
+When no rule matches in the directly-matched workspace, MCPlexer walks up the directory tree and evaluates rules in each ancestor workspace:
+
+1. Check rules in the **matched workspace** (most specific)
+2. Check rules in the **parent workspace** (if one exists)
+3. Continue up through ancestor workspaces
+4. Check the **global workspace** (root="")
+5. If still no match, apply the matched workspace's `default_policy`
+
+This allows you to define broad rules at higher-level workspaces and override them at more specific levels.
+
+## Common Patterns
+
+### Allow Specific Tools, Deny Everything Else
+
+Set `default_policy: deny` on the workspace, then add allow rules for specific tools:
+
+```yaml
+workspaces:
+  - name: "Production"
+    root_path: "/srv/app"
+    default_policy: deny
+
+route_rules:
+  - name: "Allow read-only GitHub"
+    workspace_id: production
+    tool_match: ["github__list_*", "github__get_*"]
+    downstream_server_id: github
+    policy: allow
+    priority: 50
+```
+
+### Block Destructive Tools
+
+Use a high-priority deny rule to prevent destructive operations:
+
+```yaml
+route_rules:
+  - name: "Deny destructive filesystem ops"
+    workspace_id: production
+    tool_match: ["fs__write_*", "fs__delete_*", "fs__move_*"]
+    downstream_server_id: filesystem
+    policy: deny
+    priority: 10
+```
+
+### Require Approval for Writes
+
+Allow write tools, but hold them for human review:
+
+```yaml
+route_rules:
+  - name: "Approve GitHub writes"
+    workspace_id: default
+    tool_match: ["github__create_*", "github__update_*", "github__delete_*"]
+    downstream_server_id: github
+    policy: allow
+    requires_approval: true
+    approval_timeout: 120
+    priority: 50
+```
+
+### Path-Scoped Rules
+
+Restrict tools to specific subdirectories:
+
+```yaml
+route_rules:
+  - name: "Allow DB tools in migrations only"
+    workspace_id: acme
+    path_glob: "migrations/**"
+    tool_match: ["db__*"]
+    downstream_server_id: database
+    policy: allow
+    priority: 50
+
+  - name: "Deny DB tools everywhere else"
+    workspace_id: acme
+    tool_match: ["db__*"]
+    downstream_server_id: database
+    policy: deny
+    priority: 60
+```
+
+## Route Caching
+
+The routing engine caches rules per workspace with a **30-second TTL**. After a rule is created, updated, or deleted via the API, the cache expires within 30 seconds.
+
+<Callout type="info">
+Cache invalidation is automatic. You don't need to restart MCPlexer after changing route rules — changes take effect within 30 seconds.
+</Callout>
+
+<PrevNextNav />

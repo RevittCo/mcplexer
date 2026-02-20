@@ -7,6 +7,7 @@ import { Github, Menu, X } from "lucide-react";
 import { McplexerLogo } from "@/components/logo";
 
 const navLinks = [
+  { href: "/docs", label: "Docs", external: false },
   { href: config.github, label: "GitHub", external: true },
 ];
 
@@ -42,9 +43,7 @@ export function Header() {
             </Link>
           ))}
           <Link
-            href={config.github}
-            target="_blank"
-            rel="noopener noreferrer"
+            href="/docs/quickstart"
             className="ml-2 px-3 py-1.5 text-xs bg-cyan/10 text-cyan border border-cyan/20 hover:bg-cyan/20 transition-colors"
           >
             Get Started
@@ -86,9 +85,7 @@ export function Header() {
               </Link>
             ))}
             <Link
-              href={config.github}
-              target="_blank"
-              rel="noopener noreferrer"
+              href="/docs/quickstart"
               onClick={() => setMobileOpen(false)}
               className="mt-1 px-3 py-2 text-sm bg-cyan/10 text-cyan border border-cyan/20 text-center"
             >

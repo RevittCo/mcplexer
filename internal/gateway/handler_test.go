@@ -124,7 +124,12 @@ func (m *mockStore) DeleteOAuthProvider(_ context.Context, _ string) error      
 func (m *mockStore) CreateDownstreamServer(_ context.Context, _ *store.DownstreamServer) error {
 	return nil
 }
-func (m *mockStore) GetDownstreamServer(_ context.Context, _ string) (*store.DownstreamServer, error) {
+func (m *mockStore) GetDownstreamServer(_ context.Context, id string) (*store.DownstreamServer, error) {
+	for i := range m.servers {
+		if m.servers[i].ID == id {
+			return &m.servers[i], nil
+		}
+	}
 	return nil, nil
 }
 func (m *mockStore) GetDownstreamServerByName(_ context.Context, _ string) (*store.DownstreamServer, error) {
@@ -167,6 +172,24 @@ func (m *mockStore) GetAuditStats(_ context.Context, _ string, _, _ time.Time) (
 func (m *mockStore) GetDashboardTimeSeries(_ context.Context, _, _ time.Time) ([]store.TimeSeriesPoint, error) {
 	return nil, nil
 }
+func (m *mockStore) GetDashboardTimeSeriesBucketed(_ context.Context, _, _ time.Time, _ int) ([]store.TimeSeriesPoint, error) {
+	return nil, nil
+}
+func (m *mockStore) GetToolLeaderboard(_ context.Context, _, _ time.Time, _ int) ([]store.ToolLeaderboardEntry, error) {
+	return nil, nil
+}
+func (m *mockStore) GetServerHealth(_ context.Context, _, _ time.Time) ([]store.ServerHealthEntry, error) {
+	return nil, nil
+}
+func (m *mockStore) GetErrorBreakdown(_ context.Context, _, _ time.Time, _ int) ([]store.ErrorBreakdownEntry, error) {
+	return nil, nil
+}
+func (m *mockStore) GetRouteHitMap(_ context.Context, _, _ time.Time) ([]store.RouteHitEntry, error) {
+	return nil, nil
+}
+func (m *mockStore) GetAuditCacheStats(_ context.Context, _, _ time.Time) (*store.AuditCacheStats, error) {
+	return nil, nil
+}
 
 // Stubs — ToolApprovalStore.
 func (m *mockStore) CreateToolApproval(_ context.Context, _ *store.ToolApproval) error { return nil }
@@ -179,6 +202,9 @@ func (m *mockStore) ListPendingApprovals(_ context.Context) ([]store.ToolApprova
 func (m *mockStore) ResolveToolApproval(_ context.Context, _, _, _, _, _ string) error { return nil }
 func (m *mockStore) ExpirePendingApprovals(_ context.Context, _ time.Time) (int, error) {
 	return 0, nil
+}
+func (m *mockStore) GetApprovalMetrics(_ context.Context, _, _ time.Time) (*store.ApprovalMetrics, error) {
+	return nil, nil
 }
 
 // Stubs — Store top-level.
@@ -194,12 +220,23 @@ func toolsJSON(tools ...Tool) json.RawMessage {
 }
 
 func newTestHandler(lister ToolLister, servers []store.DownstreamServer) (*handler, *mockStore) {
+	// Always include the mcpx-builtin virtual server for built-in tool routing.
+	allServers := append(servers, store.DownstreamServer{
+		ID: "mcpx-builtin", Name: "MCPlexer Built-in Tools",
+		Transport: "internal", ToolNamespace: "mcpx", Discovery: "static",
+	})
 	ms := &mockStore{
-		servers:    servers,
+		servers:    allServers,
 		capUpdates: make(map[string]json.RawMessage),
 		workspaces: []mockWorkspace{{id: "ws-global", rootPath: "/"}},
 		routeRules: map[string][]store.RouteRule{
 			"ws-global": {
+				{
+					ID: "builtin-allow", WorkspaceID: "ws-global",
+					Priority: 100, PathGlob: "**", Policy: "allow",
+					ToolMatch:          json.RawMessage(`["mcpx__*"]`),
+					DownstreamServerID: "mcpx-builtin",
+				},
 				{
 					ID: "allow-all", WorkspaceID: "ws-global",
 					Priority: 1, PathGlob: "**", Policy: "allow",
@@ -389,7 +426,7 @@ func TestHandleToolsList_FiltersStaticOnly(t *testing.T) {
 
 	names := toolNames(result)
 	// Should have the static tool + the built-in search tool.
-	want := []string{"github__create_issue", "mcplexer__search_tools"}
+	want := []string{"github__create_issue", "mcpx__load_tools", "mcpx__search_tools", "mcpx__unload_tools"}
 	if len(names) != len(want) {
 		t.Fatalf("got %v, want %v", names, want)
 	}
@@ -420,8 +457,8 @@ func TestHandleToolsList_NoSearchToolWhenNoDynamic(t *testing.T) {
 
 	names := toolNames(result)
 	for _, name := range names {
-		if name == "mcplexer__search_tools" {
-			t.Error("mcplexer__search_tools should not appear when no dynamic servers exist")
+		if name == "mcpx__search_tools" {
+			t.Error("mcpx__search_tools should not appear when no dynamic servers exist")
 		}
 	}
 }
@@ -500,7 +537,7 @@ func TestHandleToolsCall_InterceptsBuiltin(t *testing.T) {
 
 	h, _ := newTestHandler(lister, servers)
 	params, _ := json.Marshal(CallToolRequest{
-		Name:      "mcplexer__search_tools",
+		Name:      "mcpx__search_tools",
 		Arguments: json.RawMessage(`{"query":"some"}`),
 	})
 	result, rpcErr := h.handleToolsCall(context.Background(), params)
@@ -594,6 +631,66 @@ func TestHandleToolsCall_GitHubRepoAllowlistAllowsConfiguredRepo(t *testing.T) {
 	}
 	if lister.callCount != 1 {
 		t.Fatalf("downstream call count = %d, want 1", lister.callCount)
+	}
+}
+
+func TestExtractAndRemoveCacheBust(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    json.RawMessage
+		wantBust bool
+		wantArgs string
+	}{
+		{"nil args", nil, false, ""},
+		{"empty args", json.RawMessage(`{}`), false, "{}"},
+		{"no _cache_bust", json.RawMessage(`{"id":"1"}`), false, `{"id":"1"}`},
+		{"_cache_bust true", json.RawMessage(`{"id":"1","_cache_bust":true}`), true, `{"id":"1"}`},
+		{"_cache_bust false", json.RawMessage(`{"id":"1","_cache_bust":false}`), false, `{"id":"1","_cache_bust":false}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			args := tt.input
+			got := extractAndRemoveCacheBust(&args)
+			if got != tt.wantBust {
+				t.Errorf("bust = %v, want %v", got, tt.wantBust)
+			}
+			if tt.wantArgs != "" && string(args) != tt.wantArgs {
+				t.Errorf("args = %s, want %s", args, tt.wantArgs)
+			}
+		})
+	}
+}
+
+func TestInjectCacheMeta(t *testing.T) {
+	// Cache miss: should inject _meta.cache.cached=false.
+	result := json.RawMessage(`{"content":[{"type":"text","text":"hello"}]}`)
+	got := injectCacheMeta(result, false, 0)
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal(got, &envelope); err != nil {
+		t.Fatal(err)
+	}
+	var meta map[string]json.RawMessage
+	if err := json.Unmarshal(envelope["_meta"], &meta); err != nil {
+		t.Fatal(err)
+	}
+	var cacheMeta map[string]any
+	if err := json.Unmarshal(meta["cache"], &cacheMeta); err != nil {
+		t.Fatal(err)
+	}
+	if cacheMeta["cached"] != false {
+		t.Errorf("cached = %v, want false", cacheMeta["cached"])
+	}
+
+	// Cache hit: should include age_seconds.
+	got2 := injectCacheMeta(result, true, 45*time.Second)
+	json.Unmarshal(got2, &envelope) //nolint:errcheck
+	json.Unmarshal(envelope["_meta"], &meta) //nolint:errcheck
+	json.Unmarshal(meta["cache"], &cacheMeta) //nolint:errcheck
+	if cacheMeta["cached"] != true {
+		t.Errorf("cached = %v, want true", cacheMeta["cached"])
+	}
+	if cacheMeta["age_seconds"] != float64(45) {
+		t.Errorf("age_seconds = %v, want 45", cacheMeta["age_seconds"])
 	}
 }
 

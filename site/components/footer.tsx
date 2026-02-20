@@ -26,9 +26,7 @@ export function Footer() {
                 Project
               </span>
               <Link
-                href={config.github}
-                target="_blank"
-                rel="noopener noreferrer"
+                href="/docs"
                 className="text-text-dim hover:text-text transition-colors"
               >
                 Documentation

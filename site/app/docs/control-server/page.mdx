@@ -1,0 +1,116 @@
+import { Callout } from "@/components/docs/callout";
+import { TerminalBlock } from "@/components/docs/terminal-block";
+import { PrevNextNav } from "@/components/docs/prev-next-nav";
+
+# MCP Control Server
+
+The control server is an MCP server that manages MCPlexer itself. Instead of routing tool calls to downstream servers, it exposes tools for creating workspaces, configuring downstream servers, managing routes, and handling auth scopes — all through the MCP protocol.
+
+This lets you manage MCPlexer configuration directly from any MCP client (like Claude Desktop) without touching the REST API or web UI.
+
+## Starting the Control Server
+
+<TerminalBlock title="terminal">
+{`mcplexer control-server`}
+</TerminalBlock>
+
+The control server runs over stdio, just like the main gateway. It connects to the same SQLite database and applies changes immediately.
+
+## Read-Only Mode
+
+For environments where you want to inspect configuration without allowing modifications, enable read-only mode:
+
+<TerminalBlock title="terminal">
+{`MCPLEXER_CONTROL_READONLY=true mcplexer control-server`}
+</TerminalBlock>
+
+In read-only mode, all write operations (create, update, delete) are blocked. Only list and get operations are available.
+
+<Callout type="tip" title="Safe inspection">
+  Read-only mode is useful for giving AI assistants visibility into your MCPlexer configuration without the ability to change it.
+</Callout>
+
+## Available Tools
+
+The control server exposes 19 tools covering the full configuration surface:
+
+### Workspace Management
+- List all workspaces
+- Get workspace details
+- Create, update, and delete workspaces
+
+### Downstream Server Management
+- List all downstream servers
+- Get downstream server details
+- Create, update, and delete downstream servers
+
+### Route Rule Management
+- List all route rules
+- Get route rule details
+- Create, update, and delete route rules
+
+### Auth Scope Management
+- List all auth scopes
+- Get auth scope details
+- Create, update, and delete auth scopes
+
+### OAuth Provider Management
+- List all OAuth providers
+- Get OAuth provider details
+- Create, update, and delete OAuth providers
+
+## Claude Desktop Configuration
+
+Add the control server to your `claude_desktop_config.json` to manage MCPlexer from Claude Desktop:
+
+<Callout type="info" title="Config file location">
+  On macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+</Callout>
+
+```json
+{
+  "mcpServers": {
+    "mcplexer-control": {
+      "command": "mcplexer",
+      "args": ["control-server"]
+    }
+  }
+}
+```
+
+For read-only access:
+
+```json
+{
+  "mcpServers": {
+    "mcplexer-control": {
+      "command": "mcplexer",
+      "args": ["control-server"],
+      "env": {
+        "MCPLEXER_CONTROL_READONLY": "true"
+      }
+    }
+  }
+}
+```
+
+<Callout type="warning" title="Separate from the gateway">
+  The control server and the main gateway (`mcplexer serve`) are separate MCP servers. You can run both simultaneously — add both entries to your `claude_desktop_config.json` if you want MCP tool routing *and* configuration management.
+</Callout>
+
+## Use Cases
+
+### AI-Assisted Configuration
+
+With the control server connected, you can ask your AI assistant to:
+
+- "List all my workspaces and their default policies"
+- "Add a route rule for the Slack MCP server in my project workspace"
+- "Show me which downstream servers are configured"
+- "Create a new auth scope for the GitHub token"
+
+### Automation
+
+The control server can be used in scripts and automation pipelines. Pipe JSON-RPC messages over stdio to programmatically manage MCPlexer configuration.
+
+<PrevNextNav />

@@ -5,12 +5,14 @@ import (
 	"net/http"
 
 	"github.com/revittco/mcplexer/internal/config"
+	"github.com/revittco/mcplexer/internal/routing"
 	"github.com/revittco/mcplexer/internal/store"
 )
 
 type downstreamHandler struct {
-	svc   *config.Service
-	store store.DownstreamServerStore
+	svc    *config.Service
+	store  store.DownstreamServerStore
+	engine *routing.Engine // optional; invalidates route cache on mutations
 }
 
 func (h *downstreamHandler) list(w http.ResponseWriter, r *http.Request) {
@@ -53,6 +55,9 @@ func (h *downstreamHandler) create(w http.ResponseWriter, r *http.Request) {
 		writeErrorDetail(w, http.StatusBadRequest, "failed to create downstream server", err.Error())
 		return
 	}
+	if h.engine != nil {
+		h.engine.InvalidateAllRoutes()
+	}
 	writeJSON(w, http.StatusCreated, ds)
 }
 
@@ -87,6 +92,9 @@ func (h *downstreamHandler) update(w http.ResponseWriter, r *http.Request) {
 		writeErrorDetail(w, http.StatusBadRequest, "failed to update downstream server", err.Error())
 		return
 	}
+	if h.engine != nil {
+		h.engine.InvalidateAllRoutes()
+	}
 	writeJSON(w, http.StatusOK, ds)
 }
 
@@ -99,6 +107,9 @@ func (h *downstreamHandler) delete(w http.ResponseWriter, r *http.Request) {
 		}
 		writeError(w, http.StatusInternalServerError, "failed to delete downstream server")
 		return
+	}
+	if h.engine != nil {
+		h.engine.InvalidateAllRoutes()
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

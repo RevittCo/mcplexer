@@ -1,0 +1,137 @@
+import { Callout } from "@/components/docs/callout";
+import { TerminalBlock } from "@/components/docs/terminal-block";
+import { PropTable } from "@/components/docs/prop-table";
+import { PrevNextNav } from "@/components/docs/prev-next-nav";
+
+# GitHub Policy
+
+MCPlexer can enforce organization and repository allowlists on GitHub tool calls. This prevents AI agents from accessing repositories outside of approved boundaries, even if the underlying credentials have broader access.
+
+## Configuration
+
+Add `allowed_orgs` and `allowed_repos` to any route rule that handles `github__*` tools:
+
+```yaml
+route_rules:
+  - id: github-restricted
+    workspace_id: ws-prod
+    server_id: github-mcp
+    tool_pattern: "github__*"
+    allowed_orgs:
+      - acme-corp
+      - acme-internal
+    allowed_repos:
+      - acme-corp/api-service
+      - acme-corp/web-app
+      - acme-internal/deploy-tools
+```
+
+<PropTable props={[
+  { name: "allowed_orgs", type: "string[]", description: "List of GitHub organization names. Tool calls targeting repos outside these orgs are blocked." },
+  { name: "allowed_repos", type: "string[]", description: "List of GitHub repositories in owner/repo format. Tool calls targeting unlisted repos are blocked." },
+]} />
+
+## How Enforcement Works
+
+When a tool call matches a route rule with GitHub policy fields, MCPlexer enforces the policy during dispatch:
+
+1. **Tool prefix check** — only `github__*` prefixed tools are subject to policy enforcement
+2. **Argument extraction** — MCPlexer extracts the `owner` and `repo` fields from the tool call arguments
+3. **Org check** — if `allowed_orgs` is set, the `owner` must match one of the listed organizations
+4. **Repo check** — if `allowed_repos` is set, the `owner/repo` must match one of the listed repositories
+5. **Combined check** — if both are set, the repo must match `allowed_repos` AND the org must match `allowed_orgs`
+
+If the check fails, the tool call is blocked and an error is returned to the client. The attempt is logged in the audit trail with status `blocked`.
+
+<Callout type="warning" title="Both fields must match">
+  When both `allowed_orgs` and `allowed_repos` are configured on the same rule, a tool call must satisfy **both** constraints. The repo must appear in `allowed_repos` and its org must appear in `allowed_orgs`.
+</Callout>
+
+## Examples
+
+### Organization-Only Policy
+
+Allow any repository within approved organizations:
+
+```yaml
+route_rules:
+  - id: github-org-only
+    workspace_id: ws-dev
+    server_id: github-mcp
+    tool_pattern: "github__*"
+    allowed_orgs:
+      - my-company
+```
+
+<TerminalBlock title="enforcement">
+{`github__list_repos {owner: "my-company"}        → allowed
+github__get_issue  {owner: "my-company", repo: "api"} → allowed
+github__list_repos {owner: "other-org"}          → blocked`}
+</TerminalBlock>
+
+### Repository-Only Policy
+
+Restrict access to specific repositories regardless of organization:
+
+```yaml
+route_rules:
+  - id: github-repo-only
+    workspace_id: ws-prod
+    server_id: github-mcp
+    tool_pattern: "github__*"
+    allowed_repos:
+      - acme-corp/api-service
+      - acme-corp/web-app
+```
+
+<TerminalBlock title="enforcement">
+{`github__get_repo {owner: "acme-corp", repo: "api-service"} → allowed
+github__get_repo {owner: "acme-corp", repo: "web-app"}     → allowed
+github__get_repo {owner: "acme-corp", repo: "secrets"}      → blocked`}
+</TerminalBlock>
+
+### Combined Policy
+
+Require both organization and repository match for maximum control:
+
+```yaml
+route_rules:
+  - id: github-strict
+    workspace_id: ws-prod
+    server_id: github-mcp
+    tool_pattern: "github__*"
+    allowed_orgs:
+      - acme-corp
+    allowed_repos:
+      - acme-corp/api-service
+      - acme-corp/deploy-tools
+```
+
+<TerminalBlock title="enforcement">
+{`github__get_repo {owner: "acme-corp", repo: "api-service"}  → allowed
+github__get_repo {owner: "acme-corp", repo: "other-repo"}   → blocked (repo not in list)
+github__get_repo {owner: "other-org", repo: "api-service"}  → blocked (org not in list)`}
+</TerminalBlock>
+
+### No Policy (Default)
+
+Without `allowed_orgs` or `allowed_repos`, no GitHub-specific enforcement is applied. The tool call is routed normally based on standard route matching.
+
+```yaml
+route_rules:
+  - id: github-open
+    workspace_id: ws-dev
+    server_id: github-mcp
+    tool_pattern: "github__*"
+    # No allowed_orgs or allowed_repos — no policy enforcement
+```
+
+<Callout type="tip" title="Defense in depth">
+  GitHub policy is an additional layer on top of route rules and auth scopes. Even without explicit policy, tools are still subject to workspace isolation, route matching, and credential scoping.
+</Callout>
+
+<Callout type="info" title="Non-GitHub tools">
+  Policy enforcement only applies to tools with the `github__` prefix. Other downstream server tools (e.g., `slack__*`, `jira__*`) are not affected by these fields.
+</Callout>
+
+<PrevNextNav />

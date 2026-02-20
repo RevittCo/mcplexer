@@ -1,0 +1,130 @@
+import { Callout } from "@/components/docs/callout";
+import { TerminalBlock } from "@/components/docs/terminal-block";
+import { PrevNextNav } from "@/components/docs/prev-next-nav";
+
+# Dashboard & Web UI
+
+MCPlexer includes a built-in web dashboard for real-time monitoring, configuration management, and debugging. It's available at `http://localhost:8080` when running in HTTP mode.
+
+<TerminalBlock title="terminal">
+{`mcplexer serve --mode=http --port=8080`}
+</TerminalBlock>
+
+<Callout type="info" title="Local only">
+  The web UI has no authentication — it's designed for local use only. Do not expose port 8080 to the public internet without an auth proxy.
+</Callout>
+
+## Dashboard
+
+The main dashboard provides a real-time overview of your MCPlexer instance.
+
+### Metrics & Stats
+
+- **Active Sessions** — currently connected clients with session IDs and workspace info
+- **Active Downstreams** — running downstream server processes with state indicators
+- **Request Stats** — total requests, success/error/blocked counts, average and P95 latency
+- **Time Series** — request volume and latency plotted over time
+
+### Time Range Selector
+
+Use the range selector to adjust the dashboard window:
+
+| Range | Description |
+|-------|-------------|
+| **1h** | Last hour — useful for active debugging |
+| **6h** | Last 6 hours — good for a work session |
+| **24h** | Last 24 hours — daily overview |
+| **7d** | Last 7 days — weekly trends |
+
+### Leaderboards & Breakdowns
+
+- **Tool Leaderboard** — most frequently called tools ranked by volume
+- **Server Health** — per-server success rates and latency
+- **Error Breakdown** — errors grouped by type and downstream server
+- **Route Hit Map** — which route rules are matching and how often
+
+### Approval Metrics
+
+If tool approvals are configured, the dashboard shows:
+
+- Pending, approved, denied, and timed-out approval counts
+- Average wait time for approval resolution
+
+### Cache Stats
+
+Cache performance for both layers:
+
+- **Tool Call Cache** — hits, misses, and hit rate for cached tool responses
+- **Route Resolution Cache** — hits, misses, and hit rate for cached route matches
+
+## Audit Logs
+
+The **Audit Logs** page provides a searchable, filterable log of every tool call processed by MCPlexer.
+
+### Filters
+
+- **Session ID** — narrow to a specific client session
+- **Workspace** — filter by workspace
+- **Tool Name** — search for specific tools (e.g., `github__list_repos`)
+- **Status** — filter by success, error, or blocked
+- **Time Range** — before/after date filters
+
+### Live Streaming
+
+Audit logs support Server-Sent Events (SSE) for real-time streaming. The UI automatically connects to the SSE endpoint and appends new entries as they arrive.
+
+## Approvals
+
+The **Approvals** page shows the pending approval queue. When a tool call requires manual approval, it appears here with full context — the tool name, arguments, workspace, and requesting session.
+
+Approvals can be resolved directly from the UI:
+
+- **Approve** — allow the tool call to proceed
+- **Deny** — block the tool call with an optional reason
+
+The approval stream uses SSE for real-time updates, so new approval requests appear instantly.
+
+<Callout type="tip" title="Desktop notifications">
+  The [Desktop App](/docs/desktop-app) supports native OS notifications for pending approvals, so you don't need to keep the browser tab open.
+</Callout>
+
+## Dry Run
+
+The **Dry Run** page lets you simulate route resolution without executing a tool call. Enter a workspace and tool name to see:
+
+- Which route rule matches
+- The downstream server that would handle the call
+- The auth scope that would be applied
+- The final policy decision (allow/deny)
+
+This is invaluable for debugging "no matching route" issues.
+
+## Quick Setup
+
+The **Quick Setup** wizard walks you through configuring OAuth for a downstream server. It handles OAuth provider creation, auth scope configuration, and the authorization flow in a single guided process.
+
+## Configuration Pages
+
+The web UI includes dedicated management pages for each resource type:
+
+### Workspaces
+
+Create, edit, and delete workspaces. Set root paths, default policies, and tags.
+
+### Downstream Servers
+
+Manage downstream MCP server definitions. Configure commands, arguments, environment variables, and transport settings. Trigger tool discovery to refresh the tool list from a running server.
+
+### Routes
+
+Create and manage route rules. Set tool patterns, workspace assignments, priorities, and path globs. Supports bulk creation for quickly enabling multiple tools.
+
+### Credentials (Auth Scopes)
+
+Manage auth scopes with environment variable injection and OAuth token configuration. View OAuth token status and trigger re-authorization flows.
+
+### OAuth Providers
+
+Configure OAuth providers from built-in templates or custom OIDC discovery. Manage client IDs, secrets, scopes, and callback URLs.
+
+<PrevNextNav />

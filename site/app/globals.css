@@ -256,6 +256,15 @@ body {
   z-index: 0;
 }
 
+/* Docs content styles */
+.docs-content h2 {
+  scroll-margin-top: 5rem;
+}
+
+.docs-content h3 {
+  scroll-margin-top: 5rem;
+}
+
 /* Offset text decoration */
 .offset-line {
   position: relative;

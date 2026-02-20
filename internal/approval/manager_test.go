@@ -94,6 +94,10 @@ func (m *memStore) ExpirePendingApprovals(_ context.Context, before time.Time) (
 	return n, nil
 }
 
+func (m *memStore) GetApprovalMetrics(_ context.Context, _, _ time.Time) (*store.ApprovalMetrics, error) {
+	return &store.ApprovalMetrics{}, nil
+}
+
 func TestRequestApproval_Approved(t *testing.T) {
 	s := newMemStore()
 	bus := NewBus()

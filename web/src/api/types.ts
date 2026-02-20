@@ -109,6 +109,14 @@ export interface DownstreamOAuthStatusResponse {
   entries: DownstreamOAuthStatusEntry[]
 }
 
+export interface ServerCacheConfig {
+  enabled?: boolean
+  read_ttl_sec?: number
+  cacheable_patterns?: string[]
+  mutation_patterns?: string[]
+  max_entries?: number
+}
+
 export interface DownstreamServer {
   id: string
   name: string
@@ -118,6 +126,7 @@ export interface DownstreamServer {
   url: string | null
   tool_namespace: string
   capabilities_cache: Record<string, unknown>
+  cache_config?: ServerCacheConfig
   idle_timeout_sec: number
   max_instances: number
   restart_policy: string
@@ -150,6 +159,7 @@ export interface AuditRecord {
   client_type: string
   model: string
   workspace_id: string
+  workspace_name: string
   subpath: string
   tool_name: string
   params_redacted: Record<string, unknown>
@@ -157,11 +167,12 @@ export interface AuditRecord {
   downstream_server_id: string
   downstream_instance_id: string
   auth_scope_id: string
-  status: 'success' | 'error'
+  status: 'success' | 'error' | 'blocked'
   error_code: string
   error_message: string
   latency_ms: number
   response_size: number
+  cache_hit: boolean
   route_rule_summary?: string
   downstream_server_name?: string
 }
@@ -169,7 +180,7 @@ export interface AuditRecord {
 export interface AuditFilter {
   workspace_id?: string
   tool_name?: string
-  status?: 'success' | 'error'
+  status?: 'success' | 'error' | 'blocked'
   after?: string
   before?: string
   limit?: number
@@ -180,6 +191,7 @@ export interface AuditStats {
   total_requests: number
   success_count: number
   error_count: number
+  blocked_count: number
   avg_latency_ms: number
   p95_latency_ms: number
 }
@@ -190,15 +202,89 @@ export interface TimeSeriesPoint {
   servers: number
   total: number
   errors: number
+  avg_latency_ms: number
+}
+
+export interface ToolLeaderboardEntry {
+  tool_name: string
+  server_name: string
+  call_count: number
+  error_count: number
+  error_rate: number
+  avg_latency_ms: number
+  p95_latency_ms: number
+}
+
+export interface ServerHealthEntry {
+  server_id: string
+  server_name: string
+  call_count: number
+  error_count: number
+  error_rate: number
+  avg_latency_ms: number
+  p95_latency_ms: number
+}
+
+export interface ErrorBreakdownEntry {
+  group_key: string
+  server_name: string
+  error_type: 'error' | 'blocked'
+  count: number
+}
+
+export interface RouteHitEntry {
+  route_rule_id: string
+  rule_name: string
+  path_glob: string
+  hit_count: number
+  error_count: number
+}
+
+export interface ApprovalMetrics {
+  pending_count: number
+  approved_count: number
+  denied_count: number
+  timed_out_count: number
+  avg_wait_ms: number
+}
+
+export interface SessionInfo {
+  id: string
+  client_type: string
+  client_pid: number | null
+  connected_at: string
+  disconnected_at: string | null
+  workspace_id: string | null
+  model_hint: string
+}
+
+export interface CacheLayerStats {
+  hits: number
+  misses: number
+  evictions: number
+  entries: number
+  hit_rate: number
+}
+
+export interface CacheStats {
+  tool_call: CacheLayerStats
+  route_resolution: CacheLayerStats
 }
 
 export interface DashboardData {
   active_sessions: number
+  active_session_list: SessionInfo[]
   active_downstreams: DownstreamStatus[]
   recent_errors: AuditRecord[]
   recent_calls: AuditRecord[]
   stats: AuditStats | null
   timeseries: TimeSeriesPoint[]
+  tool_leaderboard: ToolLeaderboardEntry[]
+  server_health: ServerHealthEntry[]
+  error_breakdown: ErrorBreakdownEntry[]
+  route_hit_map: RouteHitEntry[]
+  approval_metrics: ApprovalMetrics | null
+  cache_stats: CacheStats | null
 }
 
 export interface DownstreamStatus {
@@ -206,6 +292,7 @@ export interface DownstreamStatus {
   server_name: string
   instance_count: number
   state: string
+  disabled: boolean
 }
 
 export interface DryRunRequest {
@@ -244,6 +331,7 @@ export interface ToolApproval {
   request_client_type: string
   request_model: string
   workspace_id: string
+  workspace_name: string
   tool_name: string
   arguments: string
   justification: string

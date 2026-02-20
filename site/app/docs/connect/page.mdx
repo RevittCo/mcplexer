@@ -1,0 +1,121 @@
+import { Callout } from "@/components/docs/callout";
+import { TerminalBlock } from "@/components/docs/terminal-block";
+import { PropTable } from "@/components/docs/prop-table";
+import { PrevNextNav } from "@/components/docs/prev-next-nav";
+
+# Connect / Bridge
+
+The `mcplexer connect` command bridges stdin/stdout to a running MCPlexer daemon over a Unix socket. This lets AI clients that only support stdio-based MCP servers communicate with a long-running MCPlexer instance.
+
+## Why Connect?
+
+MCPlexer can run in two modes:
+
+- **Direct stdio** — `mcplexer serve --mode=stdio` starts a fresh instance per client session
+- **Daemon + connect** — `mcplexer serve --mode=http` runs a persistent daemon, and `mcplexer connect` bridges individual clients to it
+
+The daemon approach is preferred for production use because downstream server processes persist across client sessions, caches stay warm, and configuration changes take effect immediately without restarting clients.
+
+## Direct Mode
+
+Connect to a running daemon via its Unix socket:
+
+<TerminalBlock title="terminal">
+{`mcplexer connect --socket=/path/to/mcplexer.sock`}
+</TerminalBlock>
+
+<PropTable props={[
+  { name: "--socket", type: "string", description: "Path to the MCPlexer daemon's Unix socket" },
+]} />
+
+The default socket location is `~/.mcplexer/mcplexer.sock` when the daemon is started with default settings.
+
+<TerminalBlock title="terminal">
+{`# Start the daemon
+mcplexer serve --mode=http
+
+# In another terminal, connect a stdio bridge
+mcplexer connect --socket=~/.mcplexer/mcplexer.sock`}
+</TerminalBlock>
+
+## Docker Mode
+
+Connect to a MCPlexer daemon running inside a Docker container:
+
+<TerminalBlock title="terminal">
+{`mcplexer connect --docker=mcplexer-container`}
+</TerminalBlock>
+
+<PropTable props={[
+  { name: "--docker", type: "string", description: "Docker container name or ID running the MCPlexer daemon" },
+]} />
+
+Docker mode automatically finds the socket inside the container and sets up the bridge. This is useful when MCPlexer runs as part of a containerized development environment.
+
+## CWD Injection
+
+When `mcplexer connect` starts, it passes the client's current working directory to the daemon via the `MCPLEXER_CLIENT_CWD` environment variable. The daemon uses this to resolve which workspace the client belongs to.
+
+This means workspace matching works correctly even though the daemon runs as a separate process — it knows where the client is working from.
+
+<TerminalBlock title="how CWD flows">
+{`# Client is in /home/dev/projects/api-service
+cd /home/dev/projects/api-service
+mcplexer connect --socket=~/.mcplexer/mcplexer.sock
+
+# Daemon receives MCPLEXER_CLIENT_CWD=/home/dev/projects/api-service
+# Matches workspace with root: /home/dev/projects/api-service`}
+</TerminalBlock>
+
+## Claude Desktop Integration
+
+To use daemon mode with Claude Desktop, configure `mcplexer connect` as the MCP server command:
+
+```json
+{
+  "mcpServers": {
+    "mcplexer": {
+      "command": "mcplexer",
+      "args": ["connect", "--socket", "/Users/you/.mcplexer/mcplexer.sock"]
+    }
+  }
+}
+```
+
+<Callout type="info" title="Config file location">
+  On macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+</Callout>
+
+With this setup, Claude Desktop launches `mcplexer connect` which bridges to your running daemon. The daemon manages all downstream servers, caching, and routing.
+
+### Docker Setup
+
+If MCPlexer runs in Docker:
+
+```json
+{
+  "mcpServers": {
+    "mcplexer": {
+      "command": "mcplexer",
+      "args": ["connect", "--docker", "mcplexer-container"]
+    }
+  }
+}
+```
+
+## When to Use Connect vs Direct Stdio
+
+| Scenario | Recommended Mode |
+|---|---|
+| Single developer, simple setup | Direct stdio (`serve --mode=stdio`) |
+| Multiple clients sharing state | Daemon + connect |
+| Persistent downstream processes | Daemon + connect |
+| Warm caches across sessions | Daemon + connect |
+| Docker development environment | Daemon + connect (`--docker`) |
+| Quick testing or evaluation | Direct stdio |
+
+<Callout type="tip" title="Start simple">
+  If you're just getting started, use direct stdio mode. Switch to daemon + connect when you need persistent processes, shared caches, or multiple concurrent clients.
+</Callout>
+
+<PrevNextNav />

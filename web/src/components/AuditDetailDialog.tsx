@@ -57,7 +57,7 @@ export function AuditDetailDialog({
           <DetailRow label="Timestamp" value={new Date(record.timestamp).toLocaleString()} />
           <DetailRow label="Tool" value={record.tool_name} mono />
           <DetailRow label="Session" value={record.session_id} mono />
-          <DetailRow label="Workspace" value={record.workspace_id ? wsName(record.workspace_id) : '-'} />
+          <DetailRow label="Workspace" value={record.workspace_name || (record.workspace_id ? wsName(record.workspace_id) : '-')} />
           <DetailRow label="Subpath" value={record.subpath || '-'} mono />
           <DetailRow label="Status" value={record.status} />
           {record.status === 'error' && (
@@ -69,6 +69,7 @@ export function AuditDetailDialog({
           )}
           <DetailRow label="Latency" value={`${record.latency_ms}ms`} mono />
           <DetailRow label="Response Size" value={`${record.response_size} bytes`} mono />
+          <DetailRow label="Cache Hit" value={record.cache_hit ? 'Yes' : 'No'} />
           <DetailRow
             label="Route Rule"
             value={record.route_rule_summary ?? record.route_rule_id ?? '-'}

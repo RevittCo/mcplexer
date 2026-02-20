@@ -67,6 +67,7 @@ type DownstreamServer struct {
 	ToolNamespace     string          `json:"tool_namespace"`
 	Discovery         string          `json:"discovery"` // "static" or "dynamic"
 	CapabilitiesCache json.RawMessage `json:"capabilities_cache,omitempty"`
+	CacheConfig       json.RawMessage `json:"cache_config,omitempty"`
 	IdleTimeoutSec    int             `json:"idle_timeout_sec"`
 	MaxInstances      int             `json:"max_instances"`
 	RestartPolicy     string          `json:"restart_policy"`
@@ -116,6 +117,7 @@ type AuditRecord struct {
 	ClientType           string          `json:"client_type"`
 	Model                string          `json:"model"`
 	WorkspaceID          string          `json:"workspace_id"`
+	WorkspaceName        string          `json:"workspace_name"`
 	Subpath              string          `json:"subpath"`
 	ToolName             string          `json:"tool_name"`
 	ParamsRedacted       json.RawMessage `json:"params_redacted,omitempty"`
@@ -128,6 +130,7 @@ type AuditRecord struct {
 	ErrorMessage         string          `json:"error_message,omitempty"`
 	LatencyMs            int             `json:"latency_ms"`
 	ResponseSize         int             `json:"response_size"`
+	CacheHit             bool            `json:"cache_hit"`
 	CreatedAt            time.Time       `json:"created_at"`
 
 	// Enriched fields for UI
@@ -149,11 +152,12 @@ type AuditFilter struct {
 
 // TimeSeriesPoint holds minute-bucketed aggregate metrics.
 type TimeSeriesPoint struct {
-	Bucket   time.Time `json:"bucket"`
-	Sessions int       `json:"sessions"`
-	Servers  int       `json:"servers"`
-	Total    int       `json:"total"`
-	Errors   int       `json:"errors"`
+	Bucket       time.Time `json:"bucket"`
+	Sessions     int       `json:"sessions"`
+	Servers      int       `json:"servers"`
+	Total        int       `json:"total"`
+	Errors       int       `json:"errors"`
+	AvgLatencyMs float64   `json:"avg_latency_ms"`
 }
 
 // AuditStats holds aggregate statistics for audit records.
@@ -161,8 +165,64 @@ type AuditStats struct {
 	TotalRequests int     `json:"total_requests"`
 	SuccessCount  int     `json:"success_count"`
 	ErrorCount    int     `json:"error_count"`
+	BlockedCount  int     `json:"blocked_count"`
 	AvgLatencyMs  float64 `json:"avg_latency_ms"`
 	P95LatencyMs  int     `json:"p95_latency_ms"`
+}
+
+// ToolLeaderboardEntry holds per-tool aggregate metrics for the dashboard.
+type ToolLeaderboardEntry struct {
+	ToolName     string  `json:"tool_name"`
+	ServerName   string  `json:"server_name"`
+	CallCount    int     `json:"call_count"`
+	ErrorCount   int     `json:"error_count"`
+	ErrorRate    float64 `json:"error_rate"`
+	AvgLatencyMs float64 `json:"avg_latency_ms"`
+	P95LatencyMs int     `json:"p95_latency_ms"`
+}
+
+// ServerHealthEntry holds per-server aggregate metrics for the dashboard.
+type ServerHealthEntry struct {
+	ServerID     string  `json:"server_id"`
+	ServerName   string  `json:"server_name"`
+	CallCount    int     `json:"call_count"`
+	ErrorCount   int     `json:"error_count"`
+	ErrorRate    float64 `json:"error_rate"`
+	AvgLatencyMs float64 `json:"avg_latency_ms"`
+	P95LatencyMs int     `json:"p95_latency_ms"`
+}
+
+// ErrorBreakdownEntry holds per-tool error counts for the dashboard.
+type ErrorBreakdownEntry struct {
+	GroupKey   string `json:"group_key"`
+	ServerName string `json:"server_name"`
+	ErrorType  string `json:"error_type"` // "error" or "blocked"
+	Count      int    `json:"count"`
+}
+
+// RouteHitEntry holds per-route hit/error counts for the dashboard.
+type RouteHitEntry struct {
+	RouteRuleID string `json:"route_rule_id"`
+	RuleName    string `json:"rule_name"`
+	PathGlob    string `json:"path_glob"`
+	HitCount    int    `json:"hit_count"`
+	ErrorCount  int    `json:"error_count"`
+}
+
+// AuditCacheStats holds cache hit/miss counts derived from audit records.
+type AuditCacheStats struct {
+	Hits    int     `json:"hits"`
+	Misses  int     `json:"misses"`
+	HitRate float64 `json:"hit_rate"`
+}
+
+// ApprovalMetrics holds aggregate approval statistics for the dashboard.
+type ApprovalMetrics struct {
+	PendingCount  int     `json:"pending_count"`
+	ApprovedCount int     `json:"approved_count"`
+	DeniedCount   int     `json:"denied_count"`
+	TimedOutCount int     `json:"timed_out_count"`
+	AvgWaitMs     float64 `json:"avg_wait_ms"`
 }
 
 // ToolApproval represents a pending or resolved tool call approval request.
@@ -173,6 +233,7 @@ type ToolApproval struct {
 	RequestClientType  string     `json:"request_client_type"`
 	RequestModel       string     `json:"request_model"`
 	WorkspaceID        string     `json:"workspace_id"`
+	WorkspaceName      string     `json:"workspace_name"`
 	ToolName           string     `json:"tool_name"`
 	Arguments          string     `json:"arguments"`
 	Justification      string     `json:"justification"`

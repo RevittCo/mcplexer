@@ -7,6 +7,7 @@ import (
 
 	"github.com/revittco/mcplexer/internal/approval"
 	"github.com/revittco/mcplexer/internal/audit"
+	"github.com/revittco/mcplexer/internal/cache"
 	"github.com/revittco/mcplexer/internal/config"
 	"github.com/revittco/mcplexer/internal/downstream"
 	"github.com/revittco/mcplexer/internal/oauth"
@@ -27,28 +28,30 @@ type RouterDeps struct {
 	AuditBus        *audit.Bus             // optional; enables SSE audit stream
 	ApprovalManager *approval.Manager      // optional; enables approval system
 	ApprovalBus     *approval.Bus          // optional; enables approval SSE stream
+	ToolCache       *cache.ToolCache       // optional; enables cache stats/flush API
 }
 
 // NewRouter creates an http.Handler with all API routes and SPA fallback.
 func NewRouter(deps RouterDeps) http.Handler {
 	mux := http.NewServeMux()
 
-	ws := &workspaceHandler{svc: deps.ConfigSvc, store: deps.Store}
+	ws := &workspaceHandler{svc: deps.ConfigSvc, store: deps.Store, engine: deps.Engine}
 	mux.HandleFunc("GET /api/v1/workspaces", ws.list)
 	mux.HandleFunc("POST /api/v1/workspaces", ws.create)
 	mux.HandleFunc("GET /api/v1/workspaces/{id}", ws.get)
 	mux.HandleFunc("PUT /api/v1/workspaces/{id}", ws.update)
 	mux.HandleFunc("DELETE /api/v1/workspaces/{id}", ws.delete)
 
-	ds := &downstreamHandler{svc: deps.ConfigSvc, store: deps.Store}
+	ds := &downstreamHandler{svc: deps.ConfigSvc, store: deps.Store, engine: deps.Engine}
 	mux.HandleFunc("GET /api/v1/downstreams", ds.list)
 	mux.HandleFunc("POST /api/v1/downstreams", ds.create)
 	mux.HandleFunc("GET /api/v1/downstreams/{id}", ds.get)
 	mux.HandleFunc("PUT /api/v1/downstreams/{id}", ds.update)
 	mux.HandleFunc("DELETE /api/v1/downstreams/{id}", ds.delete)
 
-	rt := &routeHandler{svc: deps.ConfigSvc, store: deps.Store}
+	rt := &routeHandler{svc: deps.ConfigSvc, store: deps.Store, engine: deps.Engine}
 	mux.HandleFunc("GET /api/v1/routes", rt.list)
+	mux.HandleFunc("POST /api/v1/routes/bulk", rt.bulkCreate)
 	mux.HandleFunc("POST /api/v1/routes", rt.create)
 	mux.HandleFunc("GET /api/v1/routes/{id}", rt.get)
 	mux.HandleFunc("PUT /api/v1/routes/{id}", rt.update)
@@ -81,13 +84,20 @@ func NewRouter(deps RouterDeps) http.Handler {
 		mux.HandleFunc("GET /api/v1/approvals/stream", asse.stream)
 	}
 
+	ch := &cacheHandler{toolCache: deps.ToolCache, engine: deps.Engine}
+	mux.HandleFunc("GET /api/v1/cache/stats", ch.stats)
+	mux.HandleFunc("POST /api/v1/cache/flush", ch.flush)
+
 	mux.HandleFunc("GET /api/v1/health", healthCheck)
 
 	dash := &dashboardHandler{
 		sessionStore:    deps.Store,
 		auditStore:      deps.Store,
 		downstreamStore: deps.Store,
+		approvalStore:   deps.Store,
 		manager:         deps.Manager,
+		toolCache:       deps.ToolCache,
+		engine:          deps.Engine,
 	}
 	mux.HandleFunc("GET /api/v1/dashboard", dash.get)
 

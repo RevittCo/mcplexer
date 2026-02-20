@@ -93,7 +93,7 @@ func mcpServerEntry() map[string]any {
 func printMCPEntry() {
 	entry := map[string]any{
 		"mcpServers": map[string]any{
-			"mcplexer": mcpServerEntry(),
+			"mx": mcpServerEntry(),
 		},
 	}
 	enc := json.NewEncoder(os.Stdout)
@@ -121,7 +121,7 @@ func mergeClaudeDesktopConfig(path string) error {
 	if !ok {
 		servers = make(map[string]any)
 	}
-	servers["mcplexer"] = mcpServerEntry()
+	servers["mx"] = mcpServerEntry()
 	cfg["mcpServers"] = servers
 
 	// Ensure parent directory exists

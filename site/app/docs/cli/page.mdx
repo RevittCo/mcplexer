@@ -1,0 +1,213 @@
+import { Callout } from "@/components/docs/callout";
+import { TerminalBlock } from "@/components/docs/terminal-block";
+import { PropTable } from "@/components/docs/prop-table";
+import { PrevNextNav } from "@/components/docs/prev-next-nav";
+
+# CLI Reference
+
+MCPlexer provides a single binary with subcommands for running the gateway, managing configuration, and operating the daemon.
+
+<TerminalBlock title="terminal">
+{`mcplexer <command> [flags]`}
+</TerminalBlock>
+
+## serve
+
+Start the MCP gateway. This is the primary command — it launches MCPlexer and begins accepting client connections.
+
+<TerminalBlock title="terminal">
+{`# Default: stdio mode (for Claude Desktop, Cursor, etc.)
+mcplexer serve
+
+# HTTP mode with web dashboard
+mcplexer serve --mode=http --addr=:8080
+
+# Socket mode
+mcplexer serve --mode=stdio --socket=/tmp/mcplexer.sock`}
+</TerminalBlock>
+
+<PropTable props={[
+  { name: "--mode", type: "string", default: "stdio", description: "Transport mode: stdio, http, or socket." },
+  { name: "--addr", type: "string", default: ":8080", description: "Listen address for HTTP mode." },
+  { name: "--socket", type: "string", description: "Unix socket path for socket mode." },
+]} />
+
+## connect
+
+Bridge stdin/stdout to a running MCPlexer daemon socket. This allows MCP clients that only support stdio to connect to a daemon-mode MCPlexer instance.
+
+<TerminalBlock title="terminal">
+{`# Connect to a local daemon
+mcplexer connect --socket=/tmp/mcplexer.sock
+
+# Connect to MCPlexer running inside a Docker container
+mcplexer connect --docker=my-container`}
+</TerminalBlock>
+
+<PropTable props={[
+  { name: "--socket", type: "string", description: "Path to the Unix socket. Can also be set via MCPLEXER_SOCKET_PATH." },
+  { name: "--docker", type: "string", description: "Docker container name or ID. Can also be set via MCPLEXER_DOCKER_CONTAINER." },
+]} />
+
+<Callout type="tip" title="Environment variables">
+  `connect` also reads `MCPLEXER_CLIENT_CWD` to pass the client's working directory to the daemon for workspace resolution.
+</Callout>
+
+## init
+
+Create the SQLite database and a default YAML configuration file. Run this once when first setting up MCPlexer.
+
+<TerminalBlock title="terminal">
+{`mcplexer init
+
+# Creates:
+#   ~/.mcplexer/mcplexer.db
+#   ~/.mcplexer/mcplexer.yaml`}
+</TerminalBlock>
+
+## setup
+
+Launch the interactive setup wizard. Walks you through creating your first workspace, downstream server, route rule, and auth scope.
+
+<TerminalBlock title="terminal">
+{`mcplexer setup`}
+</TerminalBlock>
+
+## status
+
+Print a summary of the current MCPlexer state — workspace count, server count, active processes, and sessions.
+
+<TerminalBlock title="terminal">
+{`mcplexer status
+
+# Workspaces:    2
+# Servers:       3
+# Active:        1
+# Sessions:      0`}
+</TerminalBlock>
+
+## dry-run
+
+Simulate route resolution for a tool call without actually executing it. Useful for verifying that your routing configuration is correct.
+
+<TerminalBlock title="terminal">
+{`mcplexer dry-run <workspace-id> <tool-name>
+
+# Example:
+mcplexer dry-run ws-abc123 github__list_repos
+
+# Matched route: rule-def456
+# Downstream:    github-mcp
+# Auth scope:    github-token
+# Policy:        allow`}
+</TerminalBlock>
+
+## secret
+
+Manage encrypted secrets stored with age encryption. Requires the `MCPLEXER_AGE_KEY` environment variable pointing to your age key file.
+
+<Callout type="warning" title="Age key required">
+  All secret commands require `MCPLEXER_AGE_KEY` to be set. Generate a key with `age-keygen -o key.txt`.
+</Callout>
+
+### secret put
+
+Store a secret value for an auth scope.
+
+<TerminalBlock title="terminal">
+{`mcplexer secret put <scope-id> <key> <value>
+
+# Example:
+mcplexer secret put github-token GITHUB_TOKEN ghp_abc123...`}
+</TerminalBlock>
+
+### secret get
+
+Retrieve a decrypted secret value.
+
+<TerminalBlock title="terminal">
+{`mcplexer secret get <scope-id> <key>
+
+# Example:
+mcplexer secret get github-token GITHUB_TOKEN`}
+</TerminalBlock>
+
+### secret list
+
+List all secret keys for an auth scope (values are not shown).
+
+<TerminalBlock title="terminal">
+{`mcplexer secret list <scope-id>
+
+# Example:
+mcplexer secret list github-token
+# GITHUB_TOKEN
+# GITHUB_ORG`}
+</TerminalBlock>
+
+### secret delete
+
+Remove a secret from an auth scope.
+
+<TerminalBlock title="terminal">
+{`mcplexer secret delete <scope-id> <key>
+
+# Example:
+mcplexer secret delete github-token GITHUB_ORG`}
+</TerminalBlock>
+
+## daemon
+
+Manage the MCPlexer background daemon. The daemon runs MCPlexer as a persistent process listening on a Unix socket.
+
+### daemon start
+
+Start the daemon in the background.
+
+<TerminalBlock title="terminal">
+{`mcplexer daemon start`}
+</TerminalBlock>
+
+### daemon stop
+
+Stop a running daemon.
+
+<TerminalBlock title="terminal">
+{`mcplexer daemon stop`}
+</TerminalBlock>
+
+### daemon status
+
+Check whether the daemon is running.
+
+<TerminalBlock title="terminal">
+{`mcplexer daemon status
+
+# Daemon: running (PID 12345)
+# Socket: /tmp/mcplexer.sock
+# Uptime: 2h 15m`}
+</TerminalBlock>
+
+### daemon logs
+
+View daemon log output.
+
+<TerminalBlock title="terminal">
+{`mcplexer daemon logs`}
+</TerminalBlock>
+
+## control-server
+
+Run a read-only MCP control server over stdio. This exposes MCPlexer's internal state (workspaces, routes, servers, audit logs) as MCP tools that an AI client can query.
+
+<TerminalBlock title="terminal">
+{`mcplexer control-server`}
+</TerminalBlock>
+
+Set `MCPLEXER_CONTROL_READONLY=true` to enforce read-only mode.
+
+<PropTable props={[
+  { name: "MCPLEXER_CONTROL_READONLY", type: "env var", default: "false", description: "When true, the control server only exposes read operations." },
+]} />
+
+<PrevNextNav />

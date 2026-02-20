@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -91,11 +92,23 @@ func (d *DB) UpdateWorkspace(ctx context.Context, w *store.Workspace) error {
 }
 
 func (d *DB) DeleteWorkspace(ctx context.Context, id string) error {
-	res, err := d.q.ExecContext(ctx, `DELETE FROM workspaces WHERE id = ?`, id)
-	if err != nil {
-		return err
-	}
-	return checkRowsAffected(res)
+	return d.withTx(ctx, func(q queryable) error {
+		if _, err := q.ExecContext(ctx,
+			`DELETE FROM route_rules WHERE workspace_id = ?`, id); err != nil {
+			return fmt.Errorf("cascade delete route_rules: %w", err)
+		}
+		if _, err := q.ExecContext(ctx,
+			`UPDATE tool_approvals SET status = 'cancelled', resolved_at = ?
+			 WHERE workspace_id = ? AND status = 'pending'`,
+			formatTime(time.Now().UTC()), id); err != nil {
+			return fmt.Errorf("cascade cancel tool_approvals: %w", err)
+		}
+		res, err := q.ExecContext(ctx, `DELETE FROM workspaces WHERE id = ?`, id)
+		if err != nil {
+			return err
+		}
+		return checkRowsAffected(res)
+	})
 }
 
 func scanWorkspace(row *sql.Row) (*store.Workspace, error) {

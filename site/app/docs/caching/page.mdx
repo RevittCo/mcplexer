@@ -1,0 +1,173 @@
+import { Callout } from "@/components/docs/callout";
+import { TerminalBlock } from "@/components/docs/terminal-block";
+import { ApiEndpoint } from "@/components/docs/api-endpoint";
+import { PropTable } from "@/components/docs/prop-table";
+import { PrevNextNav } from "@/components/docs/prev-next-nav";
+
+# Caching
+
+MCPlexer provides a multi-layer caching system that reduces latency and load on downstream MCP servers. Caching is configured per-server and automatically distinguishes between read-only and mutation operations.
+
+## Per-Server Configuration
+
+Enable caching on any downstream server definition:
+
+```yaml
+downstream_servers:
+  - id: github-mcp
+    command: github-mcp-server
+    cache:
+      enabled: true
+      ttl_seconds: 300
+      max_entries: 1000
+```
+
+<PropTable props={[
+  { name: "enabled", type: "boolean", default: "false", description: "Enable tool call caching for this server" },
+  { name: "ttl_seconds", type: "integer", default: "300", description: "Time-to-live for cached responses in seconds" },
+  { name: "max_entries", type: "integer", default: "1000", description: "Maximum number of cached responses before eviction" },
+]} />
+
+## Cacheable Patterns
+
+MCPlexer automatically identifies read-only tools by their name prefix. Tools matching these patterns are eligible for caching:
+
+- `get_*` — single resource lookups
+- `list_*` — collection queries
+- `search_*` — search operations
+
+When a cacheable tool is called with the same arguments, MCPlexer returns the cached response instead of forwarding to the downstream server.
+
+<TerminalBlock title="example cached flow">
+{`# First call — cache miss, forwarded to downstream
+github__list_repos {owner: "acme"} → 142ms
+
+# Second call (same args, within TTL) — cache hit
+github__list_repos {owner: "acme"} → 2ms`}
+</TerminalBlock>
+
+## Mutation Patterns
+
+Tools matching mutation patterns always bypass the cache and invalidate related cached entries:
+
+- `create_*` — new resource creation
+- `update_*` — resource modification
+- `delete_*` — resource deletion
+
+When a mutation tool is called, MCPlexer:
+
+1. Bypasses the cache and forwards directly to the downstream server
+2. Invalidates cached entries for related read tools on the same server
+
+<Callout type="info" title="Automatic invalidation">
+  For example, calling `github__create_issue` will invalidate cached responses for `github__list_issues` and `github__get_issue` on the same server.
+</Callout>
+
+## Targeted Invalidation Rules
+
+For more control, you can define explicit invalidation rules that specify which cached tools should be cleared when a specific tool is called:
+
+```yaml
+downstream_servers:
+  - id: github-mcp
+    command: github-mcp-server
+    cache:
+      enabled: true
+      ttl_seconds: 300
+      invalidation_rules:
+        - trigger: "github__merge_pull_request"
+          invalidate:
+            - "github__list_pull_requests"
+            - "github__get_pull_request"
+            - "github__list_reviews"
+```
+
+This ensures that merging a PR clears any cached PR listings and review data.
+
+## Cache Busting
+
+Force a fresh response for any individual tool call by passing `_cache_bust: true` in the arguments:
+
+```json
+{
+  "tool": "github__list_repos",
+  "arguments": {
+    "owner": "acme",
+    "_cache_bust": true
+  }
+}
+```
+
+The `_cache_bust` parameter is stripped before forwarding to the downstream server. The fresh response replaces the existing cache entry.
+
+<Callout type="tip" title="When to cache-bust">
+  Use cache busting when you know data has changed outside of MCPlexer (e.g., a manual edit in the GitHub UI) and need a fresh response.
+</Callout>
+
+## Flush API
+
+Clear cached entries programmatically via the REST API:
+
+<ApiEndpoint method="POST" path="/api/v1/cache/flush" description="Flush cached entries by layer and optionally by server.">
+  Body: `{"layer": "tool_call|route|all", "server_id": "optional"}`
+</ApiEndpoint>
+
+<PropTable props={[
+  { name: "layer", type: "string", description: "Cache layer to flush: tool_call (response cache), route (route resolution cache), or all" },
+  { name: "server_id", type: "string", description: "Optional — only flush entries for this downstream server" },
+]} />
+
+<TerminalBlock title="terminal">
+{`# Flush all tool call cache entries for a specific server
+curl -X POST http://localhost:8080/api/v1/cache/flush \\
+  -d '{"layer": "tool_call", "server_id": "github-mcp"}'
+
+# Flush everything
+curl -X POST http://localhost:8080/api/v1/cache/flush \\
+  -d '{"layer": "all"}'`}
+</TerminalBlock>
+
+## MCP Flush Tool
+
+MCPlexer also exposes a built-in MCP tool for flushing the cache from within an AI session:
+
+<TerminalBlock title="MCP tool">
+{`mcplexer__flush_cache
+  Flush the tool call cache. Optional server_id argument
+  to scope the flush to a specific downstream server.`}
+</TerminalBlock>
+
+## Cache Stats
+
+Monitor cache performance via the stats endpoint:
+
+<ApiEndpoint method="GET" path="/api/v1/cache/stats" description="Returns hit/miss counts and hit rates for each cache layer." />
+
+```json
+{
+  "tool_call": {
+    "hits": 1847,
+    "misses": 523,
+    "hit_rate": 0.779
+  },
+  "route_resolution": {
+    "hits": 9214,
+    "misses": 312,
+    "hit_rate": 0.967
+  }
+}
+```
+
+The dashboard displays these stats in the cache performance panel.
+
+## Route Resolution Cache
+
+In addition to tool call caching, MCPlexer caches route resolution results. When a tool call arrives, the routing engine resolves which downstream server and auth scope to use. This resolution is cached with a **30-second TTL** per workspace to avoid repeated route matching for identical tool patterns.
+
+The route resolution cache is automatically invalidated when route rules are created, updated, or deleted.
+
+<Callout type="info" title="Tools/list cache">
+  MCPlexer also caches the aggregated tools list (the response to `tools/list` requests) with a **15-second TTL**. This prevents repeated tool discovery calls from hitting all downstream servers on every request.
+</Callout>
+
+<PrevNextNav />

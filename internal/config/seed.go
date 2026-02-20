@@ -379,19 +379,39 @@ var defaultDownstreamServers = []store.DownstreamServer{
 		RestartPolicy:  "on-failure",
 		Source:         "default",
 	},
+	{
+		ID:            "mcpx-builtin",
+		Name:          "MCPlexer Built-in Tools",
+		Transport:     "internal",
+		ToolNamespace: "mcpx",
+		Discovery:     "static",
+		Source:        "default",
+	},
 }
 
 // defaultRouteRules defines the built-in route rules seeded on first run.
-// A global deny-all at low priority ensures deny-first routing.
+// The builtin-allow rule at high priority ensures MCPlexer built-in tools are
+// accessible by default. A global deny-all at low priority ensures deny-first routing.
 var defaultRouteRules = []store.RouteRule{
 	{
-		ID:       "global-deny",
-		Priority: 0,
-		PathGlob: "**",
+		ID:                 "builtin-allow",
+		Name:               "Allow MCPlexer built-in tools",
+		Priority:           100,
+		WorkspaceID:        "global",
+		PathGlob:           "**",
+		ToolMatch:          json.RawMessage(`["mcpx__*"]`),
+		DownstreamServerID: "mcpx-builtin",
+		Policy:             "allow",
+		Source:             "default",
+	},
+	{
+		ID:        "global-deny",
+		Priority:  0,
+		PathGlob:  "**",
 		ToolMatch: json.RawMessage(`["*"]`),
-		Policy:   "deny",
-		LogLevel: "info",
-		Source:   "default",
+		Policy:    "deny",
+		LogLevel:  "info",
+		Source:    "default",
 	},
 }
 
@@ -455,14 +475,17 @@ func SeedDefaultWorkspaces(ctx context.Context, s store.Store) error {
 }
 
 // SeedDefaultRouteRules creates route rules if none exist.
-// Seeds a global deny-all at lowest priority for deny-first routing.
+// Seeds a builtin-allow at high priority and global deny-all at lowest priority.
+// For existing databases, ensures the builtin-allow rule exists.
 func SeedDefaultRouteRules(ctx context.Context, s store.Store) error {
 	existing, err := s.ListRouteRules(ctx, "")
 	if err != nil {
 		return err
 	}
+
 	if len(existing) > 0 {
-		return nil
+		// Existing DB: ensure builtin-allow route exists.
+		return ensureBuiltinAllowRoute(ctx, s, existing)
 	}
 
 	slog.Info("seeding default route rules", "count", len(defaultRouteRules))
@@ -481,14 +504,46 @@ func SeedDefaultRouteRules(ctx context.Context, s store.Store) error {
 	return nil
 }
 
+// ensureBuiltinAllowRoute creates the builtin-allow route rule if missing.
+func ensureBuiltinAllowRoute(ctx context.Context, s store.Store, existing []store.RouteRule) error {
+	for _, r := range existing {
+		if r.ID == "builtin-allow" {
+			return nil // already present
+		}
+	}
+
+	now := time.Now().UTC()
+	r := store.RouteRule{
+		ID:                 "builtin-allow",
+		Name:               "Allow MCPlexer built-in tools",
+		Priority:           100,
+		WorkspaceID:        "global",
+		PathGlob:           "**",
+		ToolMatch:          json.RawMessage(`["mcpx__*"]`),
+		DownstreamServerID: "mcpx-builtin",
+		Policy:             "allow",
+		Source:             "default",
+		CreatedAt:          now,
+		UpdatedAt:          now,
+	}
+	if err := s.CreateRouteRule(ctx, &r); err != nil {
+		return err
+	}
+	slog.Info("migrated: seeded builtin-allow route rule")
+	return nil
+}
+
 // SeedDefaultDownstreamServers creates downstream server records if none exist.
+// For existing databases, ensures the mcpx-builtin virtual server exists.
 func SeedDefaultDownstreamServers(ctx context.Context, s store.Store) error {
 	existing, err := s.ListDownstreamServers(ctx)
 	if err != nil {
 		return err
 	}
+
 	if len(existing) > 0 {
-		return nil
+		// Existing DB: ensure mcpx-builtin virtual server is present.
+		return ensureBuiltinServer(ctx, s, existing)
 	}
 
 	slog.Info("seeding default downstream servers",
@@ -504,5 +559,31 @@ func SeedDefaultDownstreamServers(ctx context.Context, s store.Store) error {
 		slog.Info("seeded downstream server",
 			"id", d.ID, "name", d.Name, "transport", d.Transport)
 	}
+	return nil
+}
+
+// ensureBuiltinServer creates the mcpx-builtin virtual server if missing.
+func ensureBuiltinServer(ctx context.Context, s store.Store, existing []store.DownstreamServer) error {
+	for _, srv := range existing {
+		if srv.ID == "mcpx-builtin" {
+			return nil // already present
+		}
+	}
+
+	now := time.Now().UTC()
+	d := store.DownstreamServer{
+		ID:            "mcpx-builtin",
+		Name:          "MCPlexer Built-in Tools",
+		Transport:     "internal",
+		ToolNamespace: "mcpx",
+		Discovery:     "static",
+		Source:        "default",
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}
+	if err := s.CreateDownstreamServer(ctx, &d); err != nil {
+		return err
+	}
+	slog.Info("migrated: seeded mcpx-builtin virtual server")
 	return nil
 }

@@ -1,0 +1,63 @@
+import { Callout } from "@/components/docs/callout";
+import { TerminalBlock } from "@/components/docs/terminal-block";
+import { PrevNextNav } from "@/components/docs/prev-next-nav";
+
+# Desktop App
+
+The MCPlexer desktop app is an Electron wrapper around the web UI and Go binary. It provides a native application experience with system tray integration and OS-level notifications for tool approvals.
+
+## Running from Source
+
+Build the Go binary and web UI, then start the Electron app:
+
+<TerminalBlock title="terminal">
+{`make web-build
+make go-build
+cd electron && npm run dev`}
+</TerminalBlock>
+
+This starts the Electron app in development mode with hot-reload for the Electron shell. The Go binary runs as a child process managed by the Electron main process.
+
+<Callout type="info" title="Prerequisites">
+  You need Node.js, npm, Go, and make installed. Run `npm install` in the `electron/` directory on first setup.
+</Callout>
+
+## Features
+
+### System Tray
+
+The desktop app runs in the system tray, keeping MCPlexer available without a visible window. The tray icon shows the current status:
+
+- **Running** — MCPlexer is active and processing tool calls
+- **Stopped** — the Go process is not running
+
+Right-click the tray icon for quick actions:
+
+- Open the dashboard
+- Start/stop the MCPlexer process
+- View recent activity
+- Quit the application
+
+### Native Approval Notifications
+
+When a tool call requires approval, the desktop app sends a native OS notification. This means you don't need to keep the browser or app window open — you'll get notified wherever you are.
+
+Clicking the notification opens the approval detail view where you can approve or deny the request with full context.
+
+<Callout type="tip" title="Approval workflow">
+  Native notifications are especially useful when running MCPlexer in the background. Pair this with the [Tool Approvals](/docs/approvals) feature for a seamless approval workflow.
+</Callout>
+
+### Embedded Web UI
+
+The desktop app embeds the same web UI available at `http://localhost:8080`. All dashboard features — metrics, audit logs, configuration pages — are available within the native window.
+
+## Downloads
+
+Pre-built binaries are available on the [GitHub releases page](https://github.com/revittco/mcplexer/releases). Download the appropriate package for your platform:
+
+- **macOS** — `.dmg` installer
+- **Windows** — `.exe` installer
+- **Linux** — `.AppImage` or `.deb` package
+
+<PrevNextNav />

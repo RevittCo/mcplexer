@@ -1,0 +1,147 @@
+import { Callout } from "@/components/docs/callout";
+import { TerminalBlock } from "@/components/docs/terminal-block";
+import { ApiEndpoint } from "@/components/docs/api-endpoint";
+import { PropTable } from "@/components/docs/prop-table";
+import { PrevNextNav } from "@/components/docs/prev-next-nav";
+
+# Tool Approvals
+
+MCPlexer supports a two-phase approval flow for sensitive tool calls. When enabled on a route rule, tool calls are blocked until a human (or another agent) explicitly approves or denies them.
+
+## Enabling Approvals
+
+Add `requires_approval` and an optional `approval_timeout` to any route rule:
+
+```yaml
+route_rules:
+  - id: prod-writes
+    workspace_id: ws-prod
+    server_id: github-mcp
+    tool_pattern: "github__create_*"
+    requires_approval: true
+    approval_timeout: 300  # seconds, default 300
+```
+
+<PropTable props={[
+  { name: "requires_approval", type: "boolean", default: "false", description: "When true, matching tool calls require explicit approval before execution" },
+  { name: "approval_timeout", type: "integer", default: "300", description: "Seconds to wait for approval before the request times out" },
+]} />
+
+## Approval Lifecycle
+
+Every approval request follows a strict state machine:
+
+```
+pending → approved → (tool executes)
+        → denied   → (error returned to client)
+        → timeout  → (error returned to client)
+        → cancelled → (client disconnected)
+```
+
+1. **Pending** — the tool call is blocked, waiting for a decision
+2. **Approved** — a reviewer approved the call; MCPlexer forwards it to the downstream server
+3. **Denied** — a reviewer denied the call; the client receives an error with the reviewer's reason
+4. **Timeout** — no decision was made within `approval_timeout` seconds
+5. **Cancelled** — the requesting client disconnected before a decision
+
+## Two-Phase Flow
+
+When a tool call matches an approval-required route rule, MCPlexer runs a two-phase process:
+
+### Phase 1: Request Justification
+
+MCPlexer asks the calling client to provide a justification for the tool call. This gives reviewers context about why the call is being made.
+
+### Phase 2: Block Until Resolved
+
+The tool call is held in a pending state. MCPlexer publishes the request via SSE and makes it available through the dashboard and MCP tools. The call remains blocked until a reviewer approves, denies, or the timeout expires.
+
+<Callout type="warning" title="Self-approval prevention">
+  A session cannot approve its own tool call requests. This prevents an AI agent from approving its own actions. The approver must be a different session, the dashboard, or a system process.
+</Callout>
+
+## Approval Record
+
+Each approval request captures full context for the reviewer:
+
+<PropTable props={[
+  { name: "id", type: "string", description: "Unique approval request ID" },
+  { name: "status", type: "string", description: "Current state: pending, approved, denied, timeout, cancelled" },
+  { name: "request_session_id", type: "string", description: "Session that made the tool call" },
+  { name: "request_client_type", type: "string", description: "Client type (e.g., claude-desktop, cursor)" },
+  { name: "request_model", type: "string", description: "AI model that initiated the call" },
+  { name: "workspace_id", type: "string", description: "Workspace the call was made from" },
+  { name: "workspace_name", type: "string", description: "Human-readable workspace name" },
+  { name: "tool_name", type: "string", description: "Namespaced tool name (e.g., github__create_issue)" },
+  { name: "arguments", type: "JSON", description: "Tool call arguments" },
+  { name: "justification", type: "string", description: "Reason provided by the calling client" },
+  { name: "route_rule_id", type: "string", description: "Route rule that triggered the approval" },
+  { name: "downstream_server_id", type: "string", description: "Target downstream server" },
+  { name: "auth_scope_id", type: "string", description: "Auth scope used for this call" },
+  { name: "approver_session_id", type: "string", description: "Session that resolved the request" },
+  { name: "approver_type", type: "string", description: "How it was resolved: mcp_agent, dashboard, or system" },
+  { name: "resolution", type: "string", description: "Reviewer's reason for approving or denying" },
+  { name: "timeout_sec", type: "integer", description: "Configured timeout in seconds" },
+]} />
+
+## SSE Streaming
+
+Subscribe to real-time approval events via Server-Sent Events:
+
+<ApiEndpoint method="GET" path="/api/v1/approvals/stream" description="SSE stream of approval events. Emits events when approvals are created, approved, denied, timed out, or cancelled." />
+
+This powers the dashboard's real-time approval notifications and can be consumed by any SSE client.
+
+## Dashboard UI
+
+The MCPlexer dashboard provides a dedicated approval queue where reviewers can:
+
+- See all pending approval requests with full context
+- View the tool name, arguments, justification, and requesting session
+- Approve or deny requests with an optional reason
+- Monitor approval metrics (pending count, approval rate, average wait time)
+
+## REST API
+
+<ApiEndpoint method="GET" path="/api/v1/approvals" description="List approval requests. Supports filtering by status, workspace, and session.">
+  Query parameters: `status`, `workspace_id`, `session_id`, `limit`, `offset`
+</ApiEndpoint>
+
+<ApiEndpoint method="POST" path="/api/v1/approvals/:id/approve" description="Approve a pending tool call request.">
+  Body: `{"resolution": "Looks good, approved for production"}`
+</ApiEndpoint>
+
+<ApiEndpoint method="POST" path="/api/v1/approvals/:id/deny" description="Deny a pending tool call request.">
+  Body: `{"resolution": "Too risky without a backup plan"}`
+</ApiEndpoint>
+
+## MCP Tools
+
+MCPlexer exposes three built-in tools for programmatic approval management. These allow AI agents to participate in the approval workflow.
+
+<TerminalBlock title="available MCP tools">
+{`mcplexer__list_pending_approvals
+  List all pending approval requests with full context
+
+mcplexer__approve_tool_call
+  Approve a pending tool call by approval ID
+
+mcplexer__deny_tool_call
+  Deny a pending tool call by approval ID with a reason`}
+</TerminalBlock>
+
+<Callout type="tip" title="Agent-in-the-loop">
+  You can set up a supervisory agent that reviews and approves tool calls from other agents. The supervisor connects to MCPlexer as a separate session and uses the MCP approval tools to manage the queue.
+</Callout>
+
+## Metrics
+
+The dashboard displays approval metrics including:
+
+- **Pending count** — number of requests awaiting review
+- **Approved / Denied / Timeout counts** — historical resolution breakdown
+- **Average wait time** — how long requests typically wait before resolution
+
+These metrics help teams tune timeout values and identify bottlenecks in the approval workflow.
+
+<PrevNextNav />

@@ -1,0 +1,179 @@
+import { ApiEndpoint } from "@/components/docs/api-endpoint";
+import { Callout } from "@/components/docs/callout";
+import { PrevNextNav } from "@/components/docs/prev-next-nav";
+
+# REST API Reference
+
+MCPlexer exposes a REST API for managing configuration and querying runtime state. All endpoints are under the `/api/v1` prefix.
+
+**Base URL:** `http://localhost:8080/api/v1`
+
+<Callout type="info" title="No authentication">
+  The API has no authentication — it's designed for local use. All requests are trusted. Do not expose the API to untrusted networks without an auth proxy.
+</Callout>
+
+## Health
+
+<ApiEndpoint method="GET" path="/api/v1/health" description="Returns server health status." />
+
+## Dashboard
+
+<ApiEndpoint method="GET" path="/api/v1/dashboard?range=1h|6h|24h|7d" description="Returns a full dashboard snapshot including active sessions, downstream status, request stats, time series, tool leaderboard, server health, error breakdown, route hit map, approval metrics, and cache stats." />
+
+## Dry Run
+
+<ApiEndpoint method="POST" path="/api/v1/dry-run" description="Simulate route resolution for a tool call without executing it. Returns the matched route, downstream server, auth scope, and policy decision.">
+  Body: `{"workspace_id": "...", "tool_name": "github__list_repos"}`
+</ApiEndpoint>
+
+---
+
+## Workspaces
+
+<ApiEndpoint method="GET" path="/api/v1/workspaces" description="List all workspaces." />
+
+<ApiEndpoint method="POST" path="/api/v1/workspaces" description="Create a new workspace.">
+  Body: `{"name": "...", "root_path": "/path/to/project", "default_policy": "allow|deny", "tags": {}}`
+</ApiEndpoint>
+
+<ApiEndpoint method="GET" path="/api/v1/workspaces/{id}" description="Get a workspace by ID." />
+
+<ApiEndpoint method="PUT" path="/api/v1/workspaces/{id}" description="Update a workspace." />
+
+<ApiEndpoint method="DELETE" path="/api/v1/workspaces/{id}" description="Delete a workspace." />
+
+---
+
+## Downstream Servers
+
+<ApiEndpoint method="GET" path="/api/v1/downstreams" description="List all downstream server definitions." />
+
+<ApiEndpoint method="POST" path="/api/v1/downstreams" description="Create a new downstream server definition.">
+  Body: `{"name": "...", "command": "...", "args": [...], "env": {...}, "namespace": "..."}`
+</ApiEndpoint>
+
+<ApiEndpoint method="GET" path="/api/v1/downstreams/{id}" description="Get a downstream server by ID." />
+
+<ApiEndpoint method="PUT" path="/api/v1/downstreams/{id}" description="Update a downstream server definition." />
+
+<ApiEndpoint method="DELETE" path="/api/v1/downstreams/{id}" description="Delete a downstream server definition." />
+
+<ApiEndpoint method="POST" path="/api/v1/downstreams/{id}/discover" description="Trigger tool discovery on a downstream server. Starts the server process, queries its tool list, and stores the results." />
+
+<ApiEndpoint method="POST" path="/api/v1/downstreams/{id}/oauth-setup" description="Start the OAuth setup flow for a downstream server that requires OAuth authentication." />
+
+<ApiEndpoint method="GET" path="/api/v1/downstreams/{id}/oauth-status" description="Get the current OAuth status for a downstream server." />
+
+<ApiEndpoint method="POST" path="/api/v1/downstreams/{id}/connect" description="Connect to a downstream server using an existing OAuth token." />
+
+<ApiEndpoint method="GET" path="/api/v1/downstreams/{id}/oauth-capabilities" description="Get the OAuth capabilities and requirements for a downstream server." />
+
+---
+
+## Route Rules
+
+<ApiEndpoint method="GET" path="/api/v1/routes" description="List all route rules." />
+
+<ApiEndpoint method="POST" path="/api/v1/routes" description="Create a new route rule.">
+  Body: `{"workspace_id": "...", "server_id": "...", "tool_pattern": "github__*", "policy": "allow", "priority": 100}`
+</ApiEndpoint>
+
+<ApiEndpoint method="POST" path="/api/v1/routes/bulk" description="Bulk create multiple route rules in a single request.">
+  Body: `{"rules": [{"workspace_id": "...", "server_id": "...", "tool_pattern": "...", "policy": "allow"}]}`
+</ApiEndpoint>
+
+<ApiEndpoint method="GET" path="/api/v1/routes/{id}" description="Get a route rule by ID." />
+
+<ApiEndpoint method="PUT" path="/api/v1/routes/{id}" description="Update a route rule." />
+
+<ApiEndpoint method="DELETE" path="/api/v1/routes/{id}" description="Delete a route rule." />
+
+---
+
+## Auth Scopes
+
+<ApiEndpoint method="GET" path="/api/v1/auth-scopes" description="List all auth scopes." />
+
+<ApiEndpoint method="POST" path="/api/v1/auth-scopes" description="Create a new auth scope.">
+  Body: `{"name": "...", "server_id": "...", "env_vars": {...}}`
+</ApiEndpoint>
+
+<ApiEndpoint method="GET" path="/api/v1/auth-scopes/{id}" description="Get an auth scope by ID." />
+
+<ApiEndpoint method="PUT" path="/api/v1/auth-scopes/{id}" description="Update an auth scope." />
+
+<ApiEndpoint method="DELETE" path="/api/v1/auth-scopes/{id}" description="Delete an auth scope." />
+
+### OAuth Operations
+
+<ApiEndpoint method="GET" path="/api/v1/auth-scopes/{id}/oauth/authorize" description="Start the OAuth authorization flow. Returns a redirect URL to the OAuth provider." />
+
+<ApiEndpoint method="GET" path="/api/v1/auth-scopes/{id}/oauth/status" description="Get the current OAuth token status for an auth scope (valid, expired, or not configured)." />
+
+<ApiEndpoint method="POST" path="/api/v1/auth-scopes/{id}/oauth/revoke" description="Revoke the OAuth token for an auth scope." />
+
+<ApiEndpoint method="POST" path="/api/v1/auth-scopes/oauth-quick-setup" description="Quick OAuth setup — creates an OAuth provider, auth scope, and starts the authorization flow in one step.">
+  Body: `{"provider_template": "github", "client_id": "...", "client_secret": "...", "server_id": "..."}`
+</ApiEndpoint>
+
+---
+
+## OAuth Providers
+
+<ApiEndpoint method="GET" path="/api/v1/oauth-providers" description="List all OAuth provider configurations." />
+
+<ApiEndpoint method="POST" path="/api/v1/oauth-providers" description="Create a new OAuth provider.">
+  Body: `{"name": "...", "auth_url": "...", "token_url": "...", "client_id": "...", "client_secret": "...", "scopes": [...]}`
+</ApiEndpoint>
+
+<ApiEndpoint method="GET" path="/api/v1/oauth-providers/{id}" description="Get an OAuth provider by ID." />
+
+<ApiEndpoint method="PUT" path="/api/v1/oauth-providers/{id}" description="Update an OAuth provider." />
+
+<ApiEndpoint method="DELETE" path="/api/v1/oauth-providers/{id}" description="Delete an OAuth provider." />
+
+<ApiEndpoint method="GET" path="/api/v1/oauth-templates" description="List built-in OAuth provider templates (GitHub, Google, etc.)." />
+
+<ApiEndpoint method="POST" path="/api/v1/oauth-providers/discover" description="Run OIDC discovery on a provider URL. Returns the discovered authorization, token, and userinfo endpoints." />
+
+---
+
+## OAuth Callback
+
+<ApiEndpoint method="GET" path="/api/v1/oauth/callback" description="OAuth callback handler. Receives the authorization code from the OAuth provider and exchanges it for tokens." />
+
+---
+
+## Audit
+
+<ApiEndpoint method="GET" path="/api/v1/audit" description="Query audit records with filtering and pagination.">
+  Query params: `session_id`, `workspace_id`, `tool_name`, `status`, `after`, `before`, `limit`, `offset`
+</ApiEndpoint>
+
+<ApiEndpoint method="GET" path="/api/v1/audit/stream" description="Server-Sent Events (SSE) stream of audit events. New tool call results are pushed in real time." />
+
+---
+
+## Approvals
+
+<ApiEndpoint method="GET" path="/api/v1/approvals" description="List pending approval requests." />
+
+<ApiEndpoint method="GET" path="/api/v1/approvals/{id}" description="Get details of a specific approval request." />
+
+<ApiEndpoint method="POST" path="/api/v1/approvals/{id}/resolve" description="Resolve a pending approval request.">
+  Body: `{"approved": true, "resolution": "Looks good"}`
+</ApiEndpoint>
+
+<ApiEndpoint method="GET" path="/api/v1/approvals/stream" description="Server-Sent Events (SSE) stream of approval events. New requests and resolutions are pushed in real time." />
+
+---
+
+## Cache
+
+<ApiEndpoint method="GET" path="/api/v1/cache/stats" description="Get cache statistics for both tool call and route resolution caches. Returns hits, misses, and hit rates." />
+
+<ApiEndpoint method="POST" path="/api/v1/cache/flush" description="Flush cached entries.">
+  Body: `{"layer": "tool_call|route|all", "server_id": "optional-server-id"}`
+</ApiEndpoint>
+
+<PrevNextNav />

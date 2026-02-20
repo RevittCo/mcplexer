@@ -1,0 +1,168 @@
+import { Callout } from "@/components/docs/callout";
+import { TerminalBlock } from "@/components/docs/terminal-block";
+import { PropTable } from "@/components/docs/prop-table";
+import { PrevNextNav } from "@/components/docs/prev-next-nav";
+
+# Downstream Servers
+
+A **downstream server** is an MCP-compliant tool provider that MCPlexer manages. Each downstream server exposes tools that clients can call through the gateway. MCPlexer handles process lifecycle, connection pooling, and tool namespacing.
+
+## Configuration Fields
+
+<PropTable props={[
+  { name: "id", type: "string", description: "Unique identifier (auto-generated or user-provided)" },
+  { name: "name", type: "string", description: "Human-readable display name" },
+  { name: "transport", type: "\"stdio\" | \"http\"", description: "How MCPlexer communicates with this server" },
+  { name: "command", type: "string", description: "Process command to execute (stdio transport only)" },
+  { name: "args", type: "string[]", description: "Command-line arguments passed to the process" },
+  { name: "url", type: "string", description: "Server URL (http transport only)" },
+  { name: "tool_namespace", type: "string", description: "Prefix for all tools from this server, e.g. \"github\"" },
+  { name: "discovery", type: "\"static\" | \"dynamic\"", default: "\"static\"", description: "How tools are discovered — cached on startup or queried on demand" },
+  { name: "capabilities_cache", type: "object", description: "Cached tools/list response (populated automatically for static discovery)" },
+  { name: "cache_config", type: "object", description: "Tool response caching configuration" },
+  { name: "idle_timeout_sec", type: "integer", default: "300", description: "Seconds of inactivity before the process is stopped" },
+  { name: "max_instances", type: "integer", default: "1", description: "Maximum concurrent process instances per auth scope" },
+  { name: "restart_policy", type: "\"always\" | \"on-failure\" | \"never\"", default: "\"on-failure\"", description: "How to handle process crashes" },
+  { name: "disabled", type: "boolean", default: "false", description: "When true, this server's tools are hidden from clients" },
+  { name: "source", type: "\"yaml\" | \"api\" | \"seed\"", description: "How this server was configured" },
+]} />
+
+## Transports
+
+### stdio
+
+MCPlexer spawns the downstream server as a **child process** and communicates over stdin/stdout using JSON-RPC. This is the most common transport for local MCP servers.
+
+```yaml
+downstream_servers:
+  - name: "GitHub MCP"
+    transport: stdio
+    command: "npx"
+    args: ["-y", "@modelcontextprotocol/server-github"]
+    tool_namespace: "github"
+```
+
+The process is started lazily on the first tool call and stopped after the idle timeout.
+
+### HTTP
+
+MCPlexer connects to an **already-running server** over HTTP. Use this for remote or shared MCP servers.
+
+```yaml
+downstream_servers:
+  - name: "Internal Tools"
+    transport: http
+    url: "https://tools.internal.example.com/mcp"
+    tool_namespace: "internal"
+```
+
+## Tool Namespacing
+
+Every tool from a downstream server is prefixed with the server's `tool_namespace` using a double underscore separator:
+
+```
+github__create_issue
+github__list_repos
+slack__send_message
+```
+
+<Callout type="warning" title="Namespaces are always applied">
+Namespacing is not optional. Clients must always use the full `namespace__toolname` format. This prevents collisions when multiple servers expose tools with the same base name.
+</Callout>
+
+When a tool call arrives, MCPlexer splits on `__` to determine which downstream server should handle it, then strips the prefix before forwarding.
+
+## Discovery Modes
+
+### Static Discovery
+
+With `discovery: "static"`, MCPlexer calls `tools/list` once when the server first starts and caches the result in `capabilities_cache`. Subsequent client requests for tool listings are served from the cache.
+
+This is the default and recommended mode. It's faster and avoids repeated round-trips to the downstream server.
+
+### Dynamic Discovery
+
+With `discovery: "dynamic"`, MCPlexer queries the downstream server's `tools/list` on every client request. Use this when the server's available tools change at runtime.
+
+<Callout type="info">
+Dynamic discovery adds latency to every tools/list request. Only use it when tool availability genuinely varies.
+</Callout>
+
+## Process Lifecycle
+
+For stdio transport servers, MCPlexer manages the full process lifecycle:
+
+1. **Lazy start** — the process is not spawned until the first tool call targets it
+2. **Active** — the process handles tool calls over stdin/stdout
+3. **Idle timeout** — after `idle_timeout_sec` seconds without a tool call, the process is gracefully stopped
+4. **Crash recovery** — if the process exits unexpectedly, `restart_policy` determines the response
+
+### Restart Policies
+
+| Policy | Behavior |
+|--------|----------|
+| `on-failure` | Restart automatically on non-zero exit (default) |
+| `always` | Restart on any exit, including clean shutdown |
+| `never` | Do not restart — tool calls will fail until manually restarted |
+
+## Instance Pooling
+
+Each downstream server instance is keyed by the tuple `(server_id, auth_scope_id)`. This means if two clients use different auth scopes (e.g., different GitHub tokens), MCPlexer spawns separate process instances with the correct credentials injected.
+
+The `max_instances` field caps how many concurrent instances can run for a single server. When the limit is reached, new tool calls queue until an instance becomes available.
+
+```yaml
+downstream_servers:
+  - name: "GitHub MCP"
+    transport: stdio
+    command: "npx"
+    args: ["-y", "@modelcontextprotocol/server-github"]
+    tool_namespace: "github"
+    max_instances: 3
+    idle_timeout_sec: 600
+    restart_policy: "on-failure"
+```
+
+## Disabling a Server
+
+Set `disabled: true` to hide a server's tools from all clients without removing the configuration. This is useful for maintenance or temporarily revoking access.
+
+```yaml
+downstream_servers:
+  - name: "GitHub MCP"
+    disabled: true
+    # ... rest of config
+```
+
+Disabled servers do not appear in `tools/list` responses, and tool calls to them return an error.
+
+## Example: Full Configuration
+
+```yaml
+downstream_servers:
+  - name: "GitHub MCP"
+    transport: stdio
+    command: "npx"
+    args: ["-y", "@modelcontextprotocol/server-github"]
+    tool_namespace: "github"
+    discovery: static
+    idle_timeout_sec: 300
+    max_instances: 2
+    restart_policy: on-failure
+
+  - name: "Filesystem"
+    transport: stdio
+    command: "npx"
+    args: ["-y", "@modelcontextprotocol/server-filesystem", "/home/user/projects"]
+    tool_namespace: "fs"
+    discovery: static
+    idle_timeout_sec: 120
+
+  - name: "Remote Analytics"
+    transport: http
+    url: "https://analytics.example.com/mcp"
+    tool_namespace: "analytics"
+    discovery: dynamic
+```
+
+<PrevNextNav />

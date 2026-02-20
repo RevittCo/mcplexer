@@ -1,0 +1,90 @@
+import { Callout } from "@/components/docs/callout";
+import { TerminalBlock } from "@/components/docs/terminal-block";
+import { PrevNextNav } from "@/components/docs/prev-next-nav";
+
+# MCPlexer Documentation
+
+MCPlexer is a **directory-scoped MCP gateway** that sits between your AI client and multiple downstream MCP servers. It provides routing, authentication, tool namespacing, approval workflows, and audit logging — all from a single configuration.
+
+<TerminalBlock title="architecture">
+{`┌─────────────┐
+│  AI Client   │   Claude Desktop, Cursor, Windsurf, etc.
+│  (MCP Host)  │
+└──────┬───────┘
+       │  stdio / HTTP / socket
+       ▼
+┌──────────────────────────────────────────┐
+│              MCPlexer Gateway             │
+│                                          │
+│  ┌──────────┐ ┌────────┐ ┌───────────┐  │
+│  │ Routing  │ │  Auth  │ │  Approvals│  │
+│  │ Engine   │ │ Scopes │ │  & Audit  │  │
+│  └──────────┘ └────────┘ └───────────┘  │
+└──┬──────┬──────┬──────┬──────┬───────────┘
+   │      │      │      │      │
+   ▼      ▼      ▼      ▼      ▼
+┌──────┐┌──────┐┌──────┐┌──────┐┌──────┐
+│GitHub││Linear││ Click││ Sentry││ Your │
+│ MCP  ││ MCP  ││  Up  ││  MCP ││ MCP  │
+│Server││Server││ MCP  ││Server││Server│
+└──────┘└──────┘└──────┘└──────┘└──────┘`}
+</TerminalBlock>
+
+## Key Concepts
+
+| Concept | Description |
+|---------|-------------|
+| **Workspace** | A directory-scoped security context. Each workspace has a root path and a default policy (allow or deny). |
+| **Downstream Server** | An MCP server instance (stdio or HTTP) that MCPlexer manages. Each gets a unique namespace prefix. |
+| **Route Rule** | Maps a workspace + path glob + tool pattern to a downstream server, auth scope, and policy. |
+| **Auth Scope** | A credential container — environment variables, HTTP headers, or OAuth tokens injected into downstream calls. |
+| **Namespace** | Tool names are always prefixed as `{namespace}__{toolname}` to prevent collisions across servers. |
+| **Policy** | Either `allow` or `deny`. Deny-first evaluation means explicit denies always win. |
+
+## How It Works
+
+1. Your AI client connects to MCPlexer via stdio, HTTP, or Unix socket
+2. MCPlexer discovers tools from all configured downstream servers
+3. When a tool call arrives, the routing engine matches it to the correct downstream
+4. Auth scopes inject credentials before forwarding the request
+5. Approval workflows gate sensitive operations
+6. Every call is audit logged with full redaction of secrets
+
+## Documentation
+
+### Getting Started
+
+- [Quickstart](/docs/quickstart) — Install, configure, and make your first tool call
+- [Concepts](/docs/concepts) — Architecture, request lifecycle, and transport modes
+
+### Configuration
+
+- [Config Methods](/docs/configuration) — YAML, Web UI, Desktop App, and environment variables
+- [CLI Reference](/docs/cli) — All subcommands, flags, and usage examples
+
+### Core Concepts
+
+- [Workspaces](/docs/workspaces) — Directory-scoped security contexts
+- [Downstream Servers](/docs/downstream-servers) — Managing MCP server instances
+- [Routing Engine](/docs/routing) — Route matching, priorities, and glob patterns
+- [Authentication](/docs/authentication) — Auth scopes, OAuth, and credential injection
+- [Secrets](/docs/secrets) — Age encryption and secret management
+
+### Features
+
+- [Tool Approvals](/docs/approvals) — Approval workflows for sensitive tools
+- [Audit Logging](/docs/audit) — Request/response logging with redaction
+- [Caching](/docs/caching) — Response caching for downstream servers
+- [GitHub Policy](/docs/github-policy) — Org and repo allowlist enforcement
+- [Connect / Bridge](/docs/connect) — Bridge stdio to daemon socket or Docker
+
+### Operations
+
+- [Dashboard & Web UI](/docs/dashboard) — Real-time monitoring and configuration
+- [REST API Reference](/docs/api) — Programmatic access to all MCPlexer features
+- [Control Server](/docs/control-server) — Read-only MCP server for introspection
+- [Desktop App](/docs/desktop-app) — Native desktop application
+- [Deployment](/docs/deployment) — Production deployment patterns
+- [Troubleshooting](/docs/troubleshooting) — Common issues and debugging
+
+<PrevNextNav />

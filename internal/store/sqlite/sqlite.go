@@ -75,6 +75,24 @@ func (d *DB) Ping(ctx context.Context) error {
 	return d.db.PingContext(ctx)
 }
 
+// withTx runs fn inside a transaction. If d.q is already a *sql.Tx (e.g.
+// when called from config.Apply's transaction), it reuses that tx to avoid
+// deadlocking on MaxOpenConns(1). Otherwise it starts a new transaction.
+func (d *DB) withTx(ctx context.Context, fn func(q queryable) error) error {
+	if tx, ok := d.q.(*sql.Tx); ok {
+		return fn(tx)
+	}
+	tx, err := d.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+	if err := fn(tx); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 // Close closes the database connection.
 func (d *DB) Close() error {
 	return d.db.Close()

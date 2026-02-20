@@ -1,0 +1,130 @@
+import { Callout } from "@/components/docs/callout";
+import { TerminalBlock } from "@/components/docs/terminal-block";
+import { ApiEndpoint } from "@/components/docs/api-endpoint";
+import { PropTable } from "@/components/docs/prop-table";
+import { PrevNextNav } from "@/components/docs/prev-next-nav";
+
+# Audit Logging
+
+MCPlexer logs every tool call that flows through the gateway. Audit records capture the full lifecycle of each request — from routing to execution to response — with sensitive parameters automatically redacted.
+
+## What Gets Logged
+
+Every tool call produces an audit record with the following fields:
+
+<PropTable props={[
+  { name: "id", type: "string", description: "Unique audit record ID" },
+  { name: "timestamp", type: "datetime", description: "When the tool call was made" },
+  { name: "session_id", type: "string", description: "Client session that made the call" },
+  { name: "client_type", type: "string", description: "Client type (e.g., claude-desktop, cursor, api)" },
+  { name: "model", type: "string", description: "AI model that initiated the call" },
+  { name: "workspace_id", type: "string", description: "Workspace the call was routed through" },
+  { name: "workspace_name", type: "string", description: "Human-readable workspace name" },
+  { name: "subpath", type: "string", description: "Client's working directory relative to workspace root" },
+  { name: "tool_name", type: "string", description: "Namespaced tool name (e.g., github__list_repos)" },
+  { name: "params_redacted", type: "JSON", description: "Tool arguments with sensitive values replaced by [REDACTED]" },
+  { name: "route_rule_id", type: "string", description: "Route rule that matched the call" },
+  { name: "downstream_server_id", type: "string", description: "Target downstream server" },
+  { name: "downstream_instance_id", type: "string", description: "Specific process instance that handled the call" },
+  { name: "auth_scope_id", type: "string", description: "Auth scope used for credential injection" },
+  { name: "status", type: "string", description: "Outcome: success, error, or blocked" },
+  { name: "error_code", type: "string", description: "Error code if the call failed" },
+  { name: "error_message", type: "string", description: "Error message if the call failed" },
+  { name: "latency_ms", type: "integer", description: "Round-trip time in milliseconds" },
+  { name: "response_size", type: "integer", description: "Response payload size in bytes" },
+  { name: "cache_hit", type: "boolean", description: "Whether the response was served from cache" },
+]} />
+
+## Parameter Redaction
+
+MCPlexer automatically redacts sensitive parameters before writing them to the audit log. Redaction is controlled by **auth scope hints** — each auth scope can declare which parameter names contain secrets.
+
+```yaml
+auth_scopes:
+  - id: github-token
+    redact_params:
+      - token
+      - authorization
+      - password
+      - secret
+```
+
+When a tool call uses this auth scope, any matching parameter names in the arguments will be replaced with `[REDACTED]` in the `params_redacted` field. The original values are never persisted.
+
+<Callout type="info" title="Default redaction">
+  Even without explicit hints, MCPlexer redacts common secret patterns like `token`, `key`, `secret`, `password`, and `authorization` by default.
+</Callout>
+
+## Query API
+
+Retrieve audit records with powerful filtering and pagination:
+
+<ApiEndpoint method="GET" path="/api/v1/audit" description="Query audit records with filters. Returns paginated results ordered by timestamp descending.">
+  Query parameters: `session_id`, `workspace_id`, `tool_name`, `status`, `after`, `before`, `limit`, `offset`
+</ApiEndpoint>
+
+### Filter Parameters
+
+<PropTable props={[
+  { name: "session_id", type: "string", description: "Filter by client session ID" },
+  { name: "workspace_id", type: "string", description: "Filter by workspace" },
+  { name: "tool_name", type: "string", description: "Filter by tool name (exact match)" },
+  { name: "status", type: "string", description: "Filter by outcome: success, error, or blocked" },
+  { name: "after", type: "datetime", description: "Only records after this timestamp (RFC 3339)" },
+  { name: "before", type: "datetime", description: "Only records before this timestamp (RFC 3339)" },
+  { name: "limit", type: "integer", default: "50", description: "Maximum number of records to return" },
+  { name: "offset", type: "integer", default: "0", description: "Number of records to skip for pagination" },
+]} />
+
+### Example
+
+<TerminalBlock title="terminal">
+{`curl "http://localhost:8080/api/v1/audit?workspace_id=ws-prod&status=error&limit=10"
+
+# Returns recent errors in the production workspace`}
+</TerminalBlock>
+
+## Real-Time Stream
+
+Subscribe to audit events as they happen via Server-Sent Events:
+
+<ApiEndpoint method="GET" path="/api/v1/audit/stream" description="SSE stream of audit events. Emits a new event for every tool call that completes." />
+
+<TerminalBlock title="terminal">
+{`curl -N "http://localhost:8080/api/v1/audit/stream"
+
+# data: {"id":"aud-abc123","tool_name":"github__list_repos","status":"success","latency_ms":142}
+# data: {"id":"aud-def456","tool_name":"slack__post_message","status":"error","error_code":"auth_failed"}`}
+</TerminalBlock>
+
+The SSE stream powers the dashboard's real-time activity feed and can be consumed by monitoring tools, alerting systems, or custom integrations.
+
+## Dashboard Metrics
+
+The MCPlexer dashboard provides rich analytics built on top of audit data:
+
+### Time Series
+
+A timeline chart showing tool call volume, error rates, and latency trends over configurable time windows (1h, 6h, 24h, 7d).
+
+### Tool Leaderboard
+
+Ranked list of the most-called tools across all workspaces, with call counts, error rates, and average latency for each.
+
+### Server Health
+
+Per-downstream-server breakdown showing uptime, error rates, average latency, and active instance counts.
+
+### Error Breakdown
+
+Categorized view of errors by error code and downstream server, making it easy to spot patterns and recurring failures.
+
+### Cache Stats
+
+Hit/miss rates for the tool call cache, showing how much traffic is being served from cache vs. forwarded to downstream servers.
+
+<Callout type="tip" title="Export audit data">
+  Use the query API with wide time ranges and high limits to export audit data for external analysis. Combine with `after` and `before` filters for precise time windows.
+</Callout>
+
+<PrevNextNav />
