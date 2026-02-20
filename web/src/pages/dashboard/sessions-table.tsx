@@ -41,7 +41,6 @@ export function ActiveSessionsTable({
           <TableHeader>
             <TableRow className="border-border/50 hover:bg-transparent">
               <TableHead>Session</TableHead>
-              <TableHead>Model</TableHead>
               <TableHead>Client</TableHead>
               <TableHead className="hidden sm:table-cell">Workspace</TableHead>
               <TableHead className="hidden md:table-cell text-right">PID</TableHead>
@@ -54,10 +53,9 @@ export function ActiveSessionsTable({
                 <TableCell className="font-mono text-xs text-muted-foreground">
                   {s.id.slice(0, 8)}
                 </TableCell>
-                <TableCell className="font-mono text-sm">
-                  {s.model_hint || '-'}
+                <TableCell className="text-sm text-muted-foreground">
+                  {s.client_type}{s.model_hint ? <span className="ml-1 text-xs text-muted-foreground/60">({s.model_hint})</span> : null}
                 </TableCell>
-                <TableCell className="text-sm text-muted-foreground">{s.client_type}</TableCell>
                 <TableCell className="hidden sm:table-cell text-sm text-muted-foreground">
                   {s.workspace_id ? wsName(s.workspace_id) : '-'}
                 </TableCell>
