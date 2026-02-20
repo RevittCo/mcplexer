@@ -99,9 +99,8 @@ func (h *HTTPInstance) start(ctx context.Context) error {
 		JSONRPC: "2.0",
 		Method:  "notifications/initialized",
 	}
-	if _, err := h.doRPC(ctx, notif); err != nil {
-		// Non-fatal: some servers don't handle this
-	}
+	// Non-fatal: some servers don't handle initialized notifications.
+	_, _ = h.doRPC(ctx, notif)
 
 	h.mu.Lock()
 	h.state = StateReady

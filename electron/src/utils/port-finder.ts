@@ -1,5 +1,7 @@
 import net from "node:net";
 
+// MCPlexer uses a fixed port range (13333–13343) so the Electron app
+// can reliably locate the backend without user configuration.
 const PORT_RANGE_START = 13333;
 const PORT_RANGE_END = 13343;
 

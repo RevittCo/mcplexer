@@ -1,0 +1,108 @@
+import { Callout } from "@/components/docs/callout";
+import { TerminalBlock } from "@/components/docs/terminal-block";
+import { PrevNextNav } from "@/components/docs/prev-next-nav";
+
+# File Locations
+
+MCPlexer stores all data in `~/.mcplexer/`. This page lists every file the system creates, what it does, and how to back it up.
+
+## Data Directory
+
+The root data directory is `~/.mcplexer/`. All paths below are relative to this directory unless noted otherwise.
+
+<TerminalBlock title="~/.mcplexer/">
+{`~/.mcplexer/
+  mcplexer.db          # SQLite database (all config, audit logs, credentials)
+  mcplexer.yaml        # YAML config file (downstream server definitions)
+  age-identity.txt     # Age encryption key for secrets at rest
+  daemon.pid           # PID file when daemon is running
+  daemon.sock          # Unix socket when daemon is running
+  daemon.log           # Daemon log output`}
+</TerminalBlock>
+
+## File Reference
+
+### mcplexer.db
+
+The SQLite database. Holds everything: workspaces, downstream servers, route rules, auth scopes, OAuth tokens, encrypted secrets, and audit logs.
+
+- **Created by**: `mcplexer init` or `mcplexer setup`
+- **Override**: `MCPLEXER_DB_DSN` environment variable
+- **Backup**: `sqlite3 ~/.mcplexer/mcplexer.db ".backup /path/to/backup.db"`
+
+### mcplexer.yaml
+
+YAML configuration file for downstream server definitions. Read on startup and synced to the database. Optional — you can manage everything through the UI instead.
+
+- **Created by**: `mcplexer init` or manually
+- **Override**: `MCPLEXER_CONFIG` environment variable
+- **Details**: See [Configuration](/docs/configuration)
+
+### age-identity.txt
+
+The [age](https://age-encryption.org/) encryption key used to encrypt and decrypt secrets at rest. Generated automatically on first use.
+
+- **Created by**: `mcplexer init` or on first secret write
+- **Override**: `MCPLEXER_AGE_KEY` environment variable
+
+<Callout type="danger" title="Back up this file">
+  If you lose your age identity file, all encrypted secrets become unrecoverable. Store a backup in a secure, separate location.
+</Callout>
+
+### daemon.pid
+
+PID file written when the daemon starts. Used by `mcplexer daemon stop` and `mcplexer daemon status` to locate the running process.
+
+- **Created by**: `mcplexer daemon start`
+- **Removed by**: `mcplexer daemon stop` or on clean shutdown
+
+### daemon.sock
+
+Unix socket the daemon listens on. Clients connect to this socket via `mcplexer connect`.
+
+- **Created by**: `mcplexer daemon start`
+- **Override**: `MCPLEXER_SOCKET_PATH` environment variable
+- **Removed by**: `mcplexer daemon stop` or on clean shutdown
+
+### daemon.log
+
+Log output from the daemon process.
+
+- **Created by**: `mcplexer daemon start`
+- **View**: `mcplexer daemon logs` or `mcplexer daemon logs -f`
+
+## Overriding the Data Directory
+
+Individual paths can be overridden with environment variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MCPLEXER_DB_DSN` | `~/.mcplexer/mcplexer.db` | Database path |
+| `MCPLEXER_CONFIG` | `~/.mcplexer/mcplexer.yaml` | YAML config path |
+| `MCPLEXER_AGE_KEY` | `~/.mcplexer/age-identity.txt` | Age key path |
+| `MCPLEXER_SOCKET_PATH` | `~/.mcplexer/daemon.sock` | Daemon socket path |
+
+## Claude Desktop Config
+
+MCPlexer writes an entry to the Claude Desktop config file during `mcplexer setup`:
+
+| Platform | Path |
+|----------|------|
+| macOS | `~/Library/Application Support/Claude/claude_desktop_config.json` |
+| Linux | `~/.config/Claude/claude_desktop_config.json` |
+| Windows | `%APPDATA%\Claude\claude_desktop_config.json` |
+
+## Backup
+
+Back up these three files to fully restore an MCPlexer installation:
+
+<TerminalBlock title="terminal">
+{`# Essential backup
+cp ~/.mcplexer/mcplexer.db /backup/
+cp ~/.mcplexer/age-identity.txt /backup/
+cp ~/.mcplexer/mcplexer.yaml /backup/     # if using YAML config`}
+</TerminalBlock>
+
+The database contains encrypted secrets, but they are only decryptable with the age identity file. Back up both together.
+
+<PrevNextNav />

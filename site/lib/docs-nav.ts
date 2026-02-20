@@ -22,6 +22,7 @@ export const docsNav: NavSection[] = [
     items: [
       { title: "Config Methods", href: "/docs/configuration" },
       { title: "CLI Reference", href: "/docs/cli" },
+      { title: "File Locations", href: "/docs/file-locations" },
     ],
   },
   {

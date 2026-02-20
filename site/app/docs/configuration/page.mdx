@@ -5,26 +5,47 @@ import { PrevNextNav } from "@/components/docs/prev-next-nav";
 
 # Configuration
 
-MCPlexer can be configured through four different planes, each suited to different workflows.
+MCPlexer can be configured through four different planes. The desktop app and web UI are the recommended starting point.
 
 ## Config Planes
 
 | Plane | Best For | What It Manages |
 |-------|----------|-----------------|
-| **Desktop App** | Getting started, visual management | Everything — full GUI for all settings |
-| **YAML File** | Version-controlled server definitions | Downstream servers only |
-| **Web UI / API** | Runtime changes, team management | Workspaces, routes, auth scopes, approvals |
-| **MCP Control Server** | AI-driven introspection | Read-only access to gateway state |
+| **Desktop App / Web UI** | Recommended — visual management with validation | Everything: servers, workspaces, routes, auth, approvals |
+| **YAML File** | Version-controlled, reproducible server definitions | Downstream servers only |
+| **CLI** | Scripting and automation | Secrets, daemon, status checks |
+| **MCP Control Server** | AI-driven introspection and management | Full gateway state via MCP tools |
 
-<Callout type="info" title="YAML vs Database">
-  The YAML config file manages **downstream server definitions only**. Everything else — workspaces, route rules, auth scopes, approvals — lives in the database and is managed through the Web UI, REST API, or Desktop App.
+## Desktop App & Web UI
+
+The desktop app (Electron) and web UI are the easiest way to configure MCPlexer. They provide the same interface — the desktop app just wraps it with system tray and native notifications.
+
+After running `make install`, open the dashboard at [http://localhost:3333](http://localhost:3333) or launch the desktop app.
+
+From the UI you can:
+
+- **Quick Setup** — connect downstream servers with OAuth in a few clicks (GitHub, Linear, ClickUp, etc.)
+- **Downstream Servers** — add, edit, disable, and discover tools
+- **Workspaces** — create directory-scoped security contexts
+- **Routes** — define routing rules with priority, path globs, and tool patterns
+- **Credentials** — manage auth scopes and OAuth tokens
+- **OAuth Providers** — configure OAuth apps from built-in templates
+- **Dry Run** — test route resolution before going live
+- **Dashboard** — monitor active sessions, server health, and request metrics
+
+<Callout type="tip" title="UI validates as you go">
+  The web UI checks for namespace conflicts, invalid globs, missing references, and other common mistakes before saving. It's harder to misconfigure than raw YAML.
 </Callout>
 
 ## YAML Configuration
 
-The YAML config file defines your downstream MCP servers. On startup, MCPlexer reads this file and syncs it to the database.
+The YAML config file defines downstream MCP servers. On startup, MCPlexer reads this file and syncs it to the database. Use this when you want config-as-code that lives in version control.
 
-### Full Annotated Example
+<Callout type="info" title="YAML manages servers only">
+  Workspaces, route rules, auth scopes, and OAuth providers are managed through the UI or API — not YAML.
+</Callout>
+
+### Example
 
 ```yaml
 downstream_servers:
@@ -51,8 +72,6 @@ downstream_servers:
     url: http://localhost:3001/mcp
     tool_namespace: linear
     discovery: dynamic
-    cache:
-      enabled: false
 
   # Minimal stdio server with defaults
   - id: filesystem-mcp
@@ -61,26 +80,25 @@ downstream_servers:
     command: npx
     args: ["-y", "@modelcontextprotocol/server-filesystem", "/home/user"]
     tool_namespace: fs
-    discovery: static
 ```
 
 ### Server Properties
 
 <PropTable props={[
-  { name: "id", type: "string", description: "Unique identifier for the server. Used in route rules and process management." },
+  { name: "id", type: "string", description: "Unique identifier. Used in route rules and process management." },
   { name: "name", type: "string", description: "Human-readable display name." },
   { name: "transport", type: "stdio | http", description: "How MCPlexer communicates with this server." },
-  { name: "command", type: "string", description: "Command to spawn the server process. Required for stdio transport." },
+  { name: "command", type: "string", description: "Command to spawn the server process. Required for stdio." },
   { name: "args", type: "string[]", description: "Arguments passed to the command." },
   { name: "url", type: "string", description: "Endpoint URL. Required for HTTP transport." },
-  { name: "tool_namespace", type: "string", description: "Prefix for all tools from this server. Tools become {namespace}__{toolname}." },
-  { name: "discovery", type: "static | dynamic", default: "dynamic", description: "static: tools defined at config time. dynamic: tools discovered via tools/list at runtime." },
+  { name: "tool_namespace", type: "string", description: "Prefix for all tools. Tools become namespace__toolname." },
+  { name: "discovery", type: "static | dynamic", default: "dynamic", description: "static: tools cached at config time. dynamic: queried via tools/list at runtime." },
   { name: "idle_timeout_sec", type: "int", default: "300", description: "Seconds of inactivity before the process is stopped. stdio only." },
   { name: "max_instances", type: "int", default: "1", description: "Maximum concurrent process instances. stdio only." },
   { name: "restart_policy", type: "string", default: "on-failure", description: "When to restart crashed processes. stdio only." },
   { name: "cache.enabled", type: "bool", default: "false", description: "Enable response caching for this server." },
   { name: "cache.ttl_seconds", type: "int", default: "60", description: "Cache entry time-to-live in seconds." },
-  { name: "cache.max_entries", type: "int", default: "100", description: "Maximum number of cached responses." },
+  { name: "cache.max_entries", type: "int", default: "100", description: "Maximum cached responses." },
 ]} />
 
 ### YAML Seeding Behavior
@@ -88,17 +106,15 @@ downstream_servers:
 When MCPlexer starts, it syncs the YAML file to the database:
 
 - **New servers** in YAML are inserted into the database
-- **Changed servers** in YAML overwrite the database version
-- **Removed servers** that were originally seeded from YAML are pruned from the database
-- **Source tagging** — each server record tracks whether it came from YAML or was created via the API/UI
+- **Changed servers** overwrite the database version
+- **Removed servers** that were seeded from YAML are pruned
+- **Source tagging** — each record tracks whether it came from YAML or the UI/API
 
 <Callout type="warning" title="Don't mix config sources">
-  If a downstream server was created via the API or UI, adding it to YAML will overwrite those settings. Keep each server in one config plane.
+  If a server was created via the UI, adding it to YAML will overwrite those settings. Keep each server in one config plane.
 </Callout>
 
 ## Environment Variables
-
-All settings can be configured via environment variables. These take precedence over defaults but are overridden by CLI flags.
 
 <PropTable props={[
   { name: "MCPLEXER_MODE", type: "string", default: "stdio", description: "Transport mode: stdio, http, or socket." },
@@ -106,36 +122,21 @@ All settings can be configured via environment variables. These take precedence 
   { name: "MCPLEXER_DB_DRIVER", type: "string", default: "sqlite", description: "Database driver: sqlite or postgres." },
   { name: "MCPLEXER_DB_DSN", type: "string", default: "~/.mcplexer/mcplexer.db", description: "Database connection string." },
   { name: "MCPLEXER_CONFIG", type: "string", default: "~/.mcplexer/mcplexer.yaml", description: "Path to the YAML config file." },
-  { name: "MCPLEXER_AGE_KEY", type: "string", description: "Path to the age encryption key file for secret management." },
+  { name: "MCPLEXER_AGE_KEY", type: "string", description: "Path to the age encryption key file for secrets." },
   { name: "MCPLEXER_SOCKET_PATH", type: "string", description: "Unix socket path for daemon/socket mode." },
   { name: "MCPLEXER_EXTERNAL_URL", type: "string", description: "External URL for OAuth callback redirects." },
   { name: "MCPLEXER_LOG_LEVEL", type: "string", default: "info", description: "Log level: debug, info, warn, error." },
-  { name: "MCPLEXER_CONTROL_READONLY", type: "bool", default: "false", description: "Enable read-only mode for the control server." },
+  { name: "MCPLEXER_CONTROL_READONLY", type: "bool", default: "true", description: "Read-only mode for the control server." },
 ]} />
-
-## Web UI
-
-When running in HTTP mode, MCPlexer serves a web dashboard at the configured address. The dashboard provides:
-
-- **Real-time monitoring** — active sessions, downstream server status, request throughput
-- **Configuration management** — create and edit workspaces, routes, auth scopes
-- **Audit log viewer** — search and filter audit entries with full request/response detail
-- **Tool browser** — see all discovered tools across downstream servers
-
-<TerminalBlock title="terminal">
-{`mcplexer serve --mode=http --addr=:8080
-
-# Dashboard available at http://localhost:8080`}
-</TerminalBlock>
 
 ## MCP Control Server
 
-The control server exposes MCPlexer's state as an MCP server itself — allowing AI clients to inspect and manage the gateway.
+The control server exposes MCPlexer's state as an MCP server — allowing AI clients to inspect and manage the gateway programmatically.
 
 <TerminalBlock title="terminal">
 {`mcplexer control-server`}
 </TerminalBlock>
 
-Set `MCPLEXER_CONTROL_READONLY=true` to restrict the control server to read-only operations.
+Set `MCPLEXER_CONTROL_READONLY=true` to restrict to read-only operations. See [Control Server](/docs/control-server) for the full tool reference.
 
 <PrevNextNav />

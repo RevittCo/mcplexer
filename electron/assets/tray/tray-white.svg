@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Three input lines converging to center dot, one output line -->
+  <!-- Using thick filled rectangles and polygons for crisp rendering at small sizes -->
+
+  <!-- Top input: horizontal then diagonal to center -->
+  <path d="M6 12 H20 L34 30 L28 34 L16 18 H6 Z" fill="#fff"/>
+
+  <!-- Middle input: straight horizontal to center -->
+  <rect x="6" y="28" width="28" height="8" rx="1" fill="#fff"/>
+
+  <!-- Bottom input: horizontal then diagonal to center -->
+  <path d="M6 52 H16 L28 34 L34 38 L20 52 H6 Z" fill="#fff"/>
+
+  <!-- Output: center to right -->
+  <rect x="30" y="28" width="28" height="8" rx="1" fill="#fff"/>
+
+  <!-- Center dot -->
+  <circle cx="34" cy="32" r="7" fill="#fff"/>
+</svg>

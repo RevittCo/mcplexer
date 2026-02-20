@@ -50,16 +50,16 @@ If stopped, start it:
 {`mcplexer daemon start`}
 </TerminalBlock>
 
-**Check the socket path.** The daemon communicates over a Unix socket at `~/.mcplexer/daemon.sock`. Verify it exists and has the correct permissions:
+**Check the socket path.** The daemon communicates over a Unix socket at `/tmp/mcplexer.sock`. Verify it exists and has the correct permissions:
 
 <TerminalBlock title="terminal">
-{`ls -la ~/.mcplexer/daemon.sock`}
+{`ls -la /tmp/mcplexer.sock`}
 </TerminalBlock>
 
 If the socket file is stale (left over from a crashed process), remove it and restart:
 
 <TerminalBlock title="terminal">
-{`rm ~/.mcplexer/daemon.sock
+{`rm /tmp/mcplexer.sock
 mcplexer daemon start`}
 </TerminalBlock>
 
@@ -146,10 +146,10 @@ Debug output includes:
 
 ## Common CLI Issues
 
-**Config file not found.** MCPlexer looks for `~/.mcplexer/mcplexer.yaml` by default. Override with `MCPLEXER_CONFIG_PATH`:
+**Config file not found.** MCPlexer looks for `~/.mcplexer/mcplexer.yaml` by default. Override with `MCPLEXER_CONFIG`:
 
 <TerminalBlock title="terminal">
-{`MCPLEXER_CONFIG_PATH=/path/to/config.yaml mcplexer serve`}
+{`MCPLEXER_CONFIG=/path/to/config.yaml mcplexer serve`}
 </TerminalBlock>
 
 **Database locked.** Only one MCPlexer process can write to the SQLite database at a time. If you see "database is locked" errors, check for other running instances:

@@ -1,9 +1,11 @@
 import { app, BrowserWindow } from "electron";
 import { ChildProcess, spawn } from "node:child_process";
+import os from "node:os";
 import path from "node:path";
 import { findFreePort } from "./utils/port-finder.js";
 import { getGoBinaryPath } from "./utils/go-binary.js";
 import { waitForHealth } from "./utils/health-check.js";
+import { ensureMCPClientsConfigured } from "./utils/mcp-clients.js";
 import { initTray, setTrayStatus } from "./tray.js";
 import { startApprovalListener, stopApprovalListener } from "./notifications.js";
 import { createMarkIcon } from "./branding.js";
@@ -25,6 +27,8 @@ export function getServerUrl(): string {
 }
 
 function createWindow(): void {
+  const launchedHidden = app.getLoginItemSettings().wasOpenedAsHidden;
+
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -41,7 +45,9 @@ function createWindow(): void {
   });
 
   mainWindow.once("ready-to-show", () => {
-    mainWindow?.show();
+    if (!launchedHidden) {
+      mainWindow?.show();
+    }
   });
 
   mainWindow.on("close", (event) => {
@@ -58,9 +64,10 @@ function createWindow(): void {
 
 function spawnGoServer(port: number): ChildProcess {
   const binaryPath = getGoBinaryPath();
-  console.log(`[mcplexer] Starting Go server: ${binaryPath} serve --mode=http --addr=:${port}`);
+  const socketPath = path.join(os.tmpdir(), "mcplexer.sock");
+  console.log(`[mcplexer] Starting Go server: ${binaryPath} serve --mode=http --addr=:${port} --socket=${socketPath}`);
 
-  const child = spawn(binaryPath, ["serve", "--mode=http", `--addr=:${port}`], {
+  const child = spawn(binaryPath, ["serve", "--mode=http", `--addr=:${port}`, `--socket=${socketPath}`], {
     stdio: "pipe",
     env: { ...process.env },
   });
@@ -142,6 +149,14 @@ async function startApp(): Promise<void> {
     console.log("[mcplexer] Go server is healthy");
 
     setTrayStatus("running");
+
+    // On first launch, configure Claude Desktop and enable login item
+    try {
+      ensureMCPClientsConfigured();
+      app.setLoginItemSettings({ openAtLogin: true, openAsHidden: true });
+    } catch (err) {
+      console.error("[mcplexer] First-launch setup error:", err);
+    }
 
     createWindow();
 

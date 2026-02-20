@@ -116,6 +116,7 @@ function BrandHeader() {
 }
 
 function StatusBar() {
+  const displayHost = window.location.host || 'localhost'
   return (
     <div className="border-t border-sidebar-border px-4 py-3">
       <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
@@ -124,7 +125,7 @@ function StatusBar() {
           <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
         </span>
         <span>Connected</span>
-        <span className="ml-auto text-muted-foreground/50">:8080</span>
+        <span className="ml-auto text-muted-foreground/50">{displayHost}</span>
       </div>
     </div>
   )

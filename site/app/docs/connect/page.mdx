@@ -12,11 +12,11 @@ The `mcplexer connect` command bridges stdin/stdout to a running MCPlexer daemon
 MCPlexer can run in two modes:
 
 - **Direct stdio** — `mcplexer serve --mode=stdio` starts a fresh instance per client session
-- **Daemon + connect** — `mcplexer serve --mode=http` runs a persistent daemon, and `mcplexer connect` bridges individual clients to it
+- **Daemon + connect** — the daemon runs persistently, and `mcplexer connect` bridges individual clients to it
 
 The daemon approach is preferred for production use because downstream server processes persist across client sessions, caches stay warm, and configuration changes take effect immediately without restarting clients.
 
-## Direct Mode
+## Usage
 
 Connect to a running daemon via its Unix socket:
 
@@ -25,32 +25,18 @@ Connect to a running daemon via its Unix socket:
 </TerminalBlock>
 
 <PropTable props={[
-  { name: "--socket", type: "string", description: "Path to the MCPlexer daemon's Unix socket" },
+  { name: "--socket", type: "string", description: "Path to the MCPlexer daemon's Unix socket. Can also be set via MCPLEXER_SOCKET_PATH." },
 ]} />
 
-The default socket location is `~/.mcplexer/mcplexer.sock` when the daemon is started with default settings.
+The default socket location is `/tmp/mcplexer.sock` when the daemon is started with default settings.
 
 <TerminalBlock title="terminal">
 {`# Start the daemon
-mcplexer serve --mode=http
+mcplexer daemon start
 
 # In another terminal, connect a stdio bridge
-mcplexer connect --socket=~/.mcplexer/mcplexer.sock`}
+mcplexer connect --socket=/tmp/mcplexer.sock`}
 </TerminalBlock>
-
-## Docker Mode
-
-Connect to a MCPlexer daemon running inside a Docker container:
-
-<TerminalBlock title="terminal">
-{`mcplexer connect --docker=mcplexer-container`}
-</TerminalBlock>
-
-<PropTable props={[
-  { name: "--docker", type: "string", description: "Docker container name or ID running the MCPlexer daemon" },
-]} />
-
-Docker mode automatically finds the socket inside the container and sets up the bridge. This is useful when MCPlexer runs as part of a containerized development environment.
 
 ## CWD Injection
 
@@ -61,7 +47,7 @@ This means workspace matching works correctly even though the daemon runs as a s
 <TerminalBlock title="how CWD flows">
 {`# Client is in /home/dev/projects/api-service
 cd /home/dev/projects/api-service
-mcplexer connect --socket=~/.mcplexer/mcplexer.sock
+mcplexer connect --socket=/tmp/mcplexer.sock
 
 # Daemon receives MCPLEXER_CLIENT_CWD=/home/dev/projects/api-service
 # Matches workspace with root: /home/dev/projects/api-service`}
@@ -74,9 +60,9 @@ To use daemon mode with Claude Desktop, configure `mcplexer connect` as the MCP 
 ```json
 {
   "mcpServers": {
-    "mcplexer": {
+    "mx": {
       "command": "mcplexer",
-      "args": ["connect", "--socket", "/Users/you/.mcplexer/mcplexer.sock"]
+      "args": ["connect", "--socket", "/tmp/mcplexer.sock"]
     }
   }
 }
@@ -88,21 +74,6 @@ To use daemon mode with Claude Desktop, configure `mcplexer connect` as the MCP 
 
 With this setup, Claude Desktop launches `mcplexer connect` which bridges to your running daemon. The daemon manages all downstream servers, caching, and routing.
 
-### Docker Setup
-
-If MCPlexer runs in Docker:
-
-```json
-{
-  "mcpServers": {
-    "mcplexer": {
-      "command": "mcplexer",
-      "args": ["connect", "--docker", "mcplexer-container"]
-    }
-  }
-}
-```
-
 ## When to Use Connect vs Direct Stdio
 
 | Scenario | Recommended Mode |
@@ -111,7 +82,6 @@ If MCPlexer runs in Docker:
 | Multiple clients sharing state | Daemon + connect |
 | Persistent downstream processes | Daemon + connect |
 | Warm caches across sessions | Daemon + connect |
-| Docker development environment | Daemon + connect (`--docker`) |
 | Quick testing or evaluation | Direct stdio |
 
 <Callout type="tip" title="Start simple">

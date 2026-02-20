@@ -50,14 +50,16 @@ Clicking the notification opens the approval detail view where you can approve o
 
 ### Embedded Web UI
 
-The desktop app embeds the same web UI available at `http://localhost:8080`. All dashboard features — metrics, audit logs, configuration pages — are available within the native window.
+The desktop app embeds the same web UI available at `http://localhost:3333`. All dashboard features — metrics, audit logs, configuration pages — are available within the native window.
 
-## Downloads
+## Building
 
-Pre-built binaries are available on the [GitHub releases page](https://github.com/revittco/mcplexer/releases). Download the appropriate package for your platform:
+To build the desktop app for your platform:
 
-- **macOS** — `.dmg` installer
-- **Windows** — `.exe` installer
-- **Linux** — `.AppImage` or `.deb` package
+<TerminalBlock title="terminal">
+{`make electron-package-mac    # macOS
+make electron-package-win    # Windows
+make electron-package-linux  # Linux`}
+</TerminalBlock>
 
 <PrevNextNav />

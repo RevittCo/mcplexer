@@ -1,4 +1,4 @@
-# mcplexer
+# MCPlexer
 
 Directory-scoped MCP routing and tool control. Like [direnv](https://direnv.net) for MCP.
 
@@ -6,11 +6,11 @@ Route, scope, and secure every AI tool call based on your working directory. Loc
 
 **[Website](https://revittco.github.io/mcplexer/)** &middot; **[Issues](https://github.com/revittco/mcplexer/issues)**
 
-## What is mcplexer?
+## What is MCPlexer?
 
-mcplexer is an MCP gateway that sits between your AI client (Claude Desktop, Claude Code, etc.) and your downstream MCP servers. It multiplexes tool calls across servers with workspace-based routing, human-in-the-loop approvals, OAuth credential injection, and full audit logging.
+MCPlexer is an MCP gateway that sits between your AI client (Claude Desktop, Claude Code, etc.) and your downstream MCP servers. It multiplexes tool calls across servers with workspace-based routing, human-in-the-loop approvals, OAuth credential injection, and full audit logging.
 
-Your working directory determines which policies apply — tamper-proof in stdio mode, since mcplexer reads CWD directly from the OS.
+Your working directory determines which policies apply — tamper-proof in stdio mode, since MCPlexer reads CWD directly from the OS.
 
 ## Features
 
@@ -66,7 +66,7 @@ make build
 # Binary at ./bin/mcplexer
 ```
 
-### Desktop App (Run Locally)
+### Desktop App (macOS & Linux only)
 
 Prebuilt Electron installers are not published anymore. Run the desktop app locally:
 
@@ -82,10 +82,11 @@ npm run dev
 Notes:
 - The Electron app expects the backend binary at `bin/mcplexer`.
 - `npm run dev` compiles Electron TypeScript and launches the desktop shell.
+- Windows is not supported for the desktop app.
 
 ## Configuration
 
-mcplexer supports four configuration methods:
+MCPlexer supports four configuration methods:
 
 | Method | Use case |
 |--------|----------|
@@ -99,23 +100,13 @@ mcplexer supports four configuration methods:
 Default location: `~/.mcplexer/mcplexer.yaml`
 
 ```yaml
-workspaces:
-  - name: frontend
-    root_path: ~/projects/app
-    default_policy: deny
-
-servers:
-  - name: github
-    namespace: github
+downstream_servers:
+  - id: github
+    name: GitHub MCP
+    transport: stdio
     command: npx
     args: ["-y", "@modelcontextprotocol/server-github"]
-
-rules:
-  - name: allow-github
-    workspace: frontend
-    tool_pattern: "github__*"
-    policy: allow
-    priority: 10
+    tool_namespace: github
 ```
 
 YAML-sourced items are auto-pruned when removed from the config file. Items created via API or UI persist independently.
@@ -149,7 +140,7 @@ mcplexer control-server Run MCP control protocol server (19 tools)
 
 ## How Routing Works
 
-1. **CWD resolution** — in stdio mode, mcplexer reads `os.Getwd()` to determine the client's working directory
+1. **CWD resolution** — in stdio mode, MCPlexer reads `os.Getwd()` to determine the client's working directory
 2. **Workspace matching** — the most specific matching workspace wins (longest path prefix)
 3. **Rule evaluation** — rules are sorted by path glob specificity, then tool specificity, then priority
 4. **Deny-first** — deny rules stop the chain immediately

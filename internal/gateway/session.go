@@ -272,10 +272,3 @@ func (sm *sessionManager) getActiveTools() []Tool {
 	return tools
 }
 
-// hasActiveTool checks if a tool is in the active set.
-func (sm *sessionManager) hasActiveTool(name string) bool {
-	sm.toolsMu.RLock()
-	defer sm.toolsMu.RUnlock()
-	_, ok := sm.activeTools[name]
-	return ok
-}

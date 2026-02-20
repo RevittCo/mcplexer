@@ -33,6 +33,6 @@ func writeErrorDetail(w http.ResponseWriter, status int, msg, detail string) {
 
 // decodeJSON reads and decodes a JSON request body into v.
 func decodeJSON(r *http.Request, v any) error {
-	defer r.Body.Close()
+	defer func() { _ = r.Body.Close() }()
 	return json.NewDecoder(r.Body).Decode(v)
 }

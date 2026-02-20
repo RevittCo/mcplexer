@@ -1,15 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import {
   Table,
   TableBody,
@@ -18,13 +9,6 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
 import { useApi } from '@/hooks/use-api'
 import {
@@ -36,39 +20,13 @@ import {
 } from '@/api/client'
 import type { DownstreamOAuthStatusEntry, DownstreamServer } from '@/api/types'
 import { ConnectDialog } from './ConnectDialog'
-import type { ServerCacheConfig } from '@/api/types'
-import { Checkbox } from '@/components/ui/checkbox'
-import { AlertCircle, ChevronDown, ChevronRight, Clock, Copy, Link, Pause, Pencil, Play, Plus, Server, Trash2 } from 'lucide-react'
+import { DownstreamDialog, emptyDownstreamForm } from './DownstreamDialog'
+import type { DownstreamFormData } from './DownstreamDialog'
+import { Copy, Link, Pause, Pencil, Play, Plus, Server, Trash2 } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
-
-interface FormData {
-  name: string
-  transport: 'stdio' | 'http'
-  command: string
-  args: string[]
-  url: string | null
-  tool_namespace: string
-  idle_timeout_sec: number
-  max_instances: number
-  restart_policy: string
-  disabled: boolean
-  cache_config?: ServerCacheConfig
-}
-
-const emptyForm: FormData = {
-  name: '',
-  transport: 'stdio',
-  command: '',
-  args: [],
-  url: null,
-  tool_namespace: '',
-  idle_timeout_sec: 300,
-  max_instances: 1,
-  restart_policy: 'on-failure',
-  disabled: false,
-}
+import { getOAuthBadges } from './DownstreamOAuthBadges'
 
 export function DownstreamsPage() {
   const fetcher = useCallback(() => listDownstreams(), [])
@@ -76,7 +34,7 @@ export function DownstreamsPage() {
 
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<DownstreamServer | null>(null)
-  const [form, setForm] = useState<FormData>(emptyForm)
+  const [form, setForm] = useState<DownstreamFormData>(emptyDownstreamForm)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [connectDialogOpen, setConnectDialogOpen] = useState(false)
@@ -85,7 +43,6 @@ export function DownstreamsPage() {
   const [statusErrors, setStatusErrors] = useState<Record<string, boolean>>({})
   const [deleteTarget, setDeleteTarget] = useState<DownstreamServer | null>(null)
 
-  // Fetch OAuth status for all HTTP downstreams.
   useEffect(() => {
     if (!data) return
     let active = true
@@ -105,71 +62,9 @@ export function DownstreamsPage() {
     return () => { active = false }
   }, [data])
 
-  function formatRelativeTime(isoDate: string): string {
-    const diff = new Date(isoDate).getTime() - Date.now()
-    if (diff < 0) return 'expired'
-    const days = Math.floor(diff / (1000 * 60 * 60 * 24))
-    if (days > 1) return `${days}d`
-    const hours = Math.floor(diff / (1000 * 60 * 60))
-    if (hours > 0) return `${hours}h`
-    return 'soon'
-  }
-
-  function getOAuthBadges(ds: DownstreamServer) {
-    if (ds.transport !== 'http') return null
-    if (statusErrors[ds.id]) {
-      return (
-        <Badge variant="outline" className="text-xs text-destructive border-destructive/30">
-          <AlertCircle className="mr-1 h-3 w-3" /> Error
-        </Badge>
-      )
-    }
-    const entries = oauthStatuses[ds.id]
-    if (!entries || entries.length === 0) {
-      return (
-        <Badge variant="outline" className="text-xs text-muted-foreground cursor-pointer hover:text-primary hover:border-primary"
-          onClick={(e) => { e.stopPropagation(); openConnect(ds) }}>
-          Not Connected
-        </Badge>
-      )
-    }
-    return (
-      <div className="flex flex-col gap-1">
-        {entries.map((entry) => {
-          const expiring = entry.expires_at && (new Date(entry.expires_at).getTime() - Date.now()) < 7 * 24 * 60 * 60 * 1000
-          if (entry.status === 'authenticated') {
-            return (
-              <Badge key={entry.auth_scope_id} className={`text-xs border-0 ${expiring ? 'bg-amber-500/15 text-amber-600' : 'bg-emerald-500/15 text-emerald-600'}`}>
-                {entry.auth_scope_name}
-                {entry.expires_at && (
-                  <span className="ml-1 opacity-70">
-                    <Clock className="mr-0.5 inline h-2.5 w-2.5" />
-                    {formatRelativeTime(entry.expires_at)}
-                  </span>
-                )}
-              </Badge>
-            )
-          }
-          if (entry.status === 'expired') {
-            return (
-              <Badge key={entry.auth_scope_id} variant="outline" className="text-xs text-amber-600 border-amber-300">
-                {entry.auth_scope_name} — Expired
-              </Badge>
-            )
-          }
-          return (
-            <Badge key={entry.auth_scope_id} variant="outline" className="text-xs text-muted-foreground">
-              {entry.auth_scope_name}
-            </Badge>
-          )
-        })}
-      </div>
-    )
-  }
-
   function openCreate() {
     setEditing(null)
-    setForm(emptyForm)
+    setForm(emptyDownstreamForm)
     setSaveError(null)
     setDialogOpen(true)
   }
@@ -336,7 +231,7 @@ export function DownstreamsPage() {
                         {ds.max_instances}
                       </TableCell>
                       <TableCell className="hidden sm:table-cell">
-                        {getOAuthBadges(ds)}
+                        {getOAuthBadges(ds, oauthStatuses, statusErrors, openConnect)}
                       </TableCell>
                       <TableCell>
                         <div className="flex gap-0.5">
@@ -446,224 +341,5 @@ export function DownstreamsPage() {
         onConfirm={confirmDelete}
       />
     </div>
-  )
-}
-
-function DownstreamDialog({
-  open,
-  onClose,
-  form,
-  setForm,
-  onSave,
-  saving,
-  editing,
-  saveError,
-}: {
-  open: boolean
-  onClose: () => void
-  form: FormData
-  setForm: React.Dispatch<React.SetStateAction<FormData>>
-  onSave: () => void
-  saving: boolean
-  editing: boolean
-  saveError: string | null
-}) {
-  const [showCaching, setShowCaching] = useState(false)
-
-  const cacheEnabled = form.cache_config?.enabled ?? true
-  const cacheTTL = form.cache_config?.read_ttl_sec ?? 1800
-  const cacheMaxEntries = form.cache_config?.max_entries ?? 1000
-
-  function updateCache(patch: Partial<ServerCacheConfig>) {
-    setForm((f) => ({
-      ...f,
-      cache_config: { ...f.cache_config, ...patch },
-    }))
-  }
-
-  function formatTTLHint(sec: number): string {
-    if (sec === 0) return 'indefinite'
-    if (sec < 60) return `${sec}s`
-    if (sec < 3600) return `${Math.round(sec / 60)}m`
-    return `${(sec / 3600).toFixed(1)}h`
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={() => onClose()}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>{editing ? 'Edit Server' : 'Add Server'}</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <Label className="text-xs text-muted-foreground">Name</Label>
-            <Input
-              value={form.name}
-              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label className="text-xs text-muted-foreground">Transport</Label>
-            <Select
-              value={form.transport}
-              onValueChange={(v) =>
-                setForm((f) => ({ ...f, transport: v as 'stdio' | 'http' }))
-              }
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="stdio">stdio</SelectItem>
-                <SelectItem value="http">http</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          {form.transport === 'stdio' ? (
-            <>
-              <div className="space-y-2">
-                <Label className="text-xs text-muted-foreground">Command</Label>
-                <Input
-                  className="font-mono text-sm"
-                  value={form.command}
-                  onChange={(e) => setForm((f) => ({ ...f, command: e.target.value }))}
-                  placeholder="npx"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label className="text-xs text-muted-foreground">
-                  Args (comma-separated)
-                </Label>
-                <Input
-                  className="font-mono text-sm"
-                  value={(form.args ?? []).join(', ')}
-                  onChange={(e) =>
-                    setForm((f) => ({
-                      ...f,
-                      args: e.target.value
-                        .split(',')
-                        .map((s) => s.trim())
-                        .filter(Boolean),
-                    }))
-                  }
-                  placeholder="-y, @modelcontextprotocol/server-github"
-                />
-              </div>
-              {form.command && (
-                <div className="rounded-md bg-muted/50 border border-border/50 px-3 py-2 font-mono text-xs text-muted-foreground">
-                  <span className="text-primary">$</span> {form.command} {(form.args ?? []).join(' ')}
-                </div>
-              )}
-            </>
-          ) : (
-            <div className="space-y-2">
-              <Label className="text-xs text-muted-foreground">URL</Label>
-              <Input
-                className="font-mono text-sm"
-                value={form.url ?? ''}
-                onChange={(e) => setForm((f) => ({ ...f, url: e.target.value || null }))}
-                placeholder="http://localhost:3000"
-              />
-            </div>
-          )}
-          <div className="space-y-2">
-            <Label className="text-xs text-muted-foreground">Tool Namespace</Label>
-            <Input
-              className="font-mono text-sm"
-              value={form.tool_namespace}
-              onChange={(e) => setForm((f) => ({ ...f, tool_namespace: e.target.value }))}
-              placeholder="github"
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label className="text-xs text-muted-foreground">Idle Timeout (sec)</Label>
-              <Input
-                type="number"
-                value={form.idle_timeout_sec}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, idle_timeout_sec: Number(e.target.value) }))
-                }
-              />
-            </div>
-            <div className="space-y-2">
-              <Label className="text-xs text-muted-foreground">Max Instances</Label>
-              <Input
-                type="number"
-                value={form.max_instances}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, max_instances: Number(e.target.value) }))
-                }
-              />
-            </div>
-          </div>
-
-          <button
-            type="button"
-            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-            onClick={() => setShowCaching(!showCaching)}
-          >
-            {showCaching ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-            Caching
-            {!showCaching && (
-              <span className="text-muted-foreground/60">
-                — {cacheEnabled ? `${formatTTLHint(cacheTTL)} TTL` : 'disabled'}
-              </span>
-            )}
-          </button>
-
-          {showCaching && (
-            <div className="space-y-3 rounded-md border border-border/50 p-3">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <Checkbox
-                  checked={cacheEnabled}
-                  onCheckedChange={(checked) => updateCache({ enabled: checked === true })}
-                />
-                <span className="text-sm">Enable caching</span>
-              </label>
-
-              {cacheEnabled && (
-                <>
-                  <div className="space-y-2">
-                    <Label className="text-xs text-muted-foreground">TTL (seconds)</Label>
-                    <Input
-                      type="number"
-                      min={0}
-                      value={cacheTTL}
-                      onChange={(e) => updateCache({ read_ttl_sec: Number(e.target.value) })}
-                      className="w-32"
-                    />
-                    <p className="text-xs text-muted-foreground/60">
-                      0 = indefinite. Default is 1800 (30 min).
-                    </p>
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-xs text-muted-foreground">Max Entries</Label>
-                    <Input
-                      type="number"
-                      min={1}
-                      value={cacheMaxEntries}
-                      onChange={(e) => updateCache({ max_entries: Number(e.target.value) })}
-                      className="w-32"
-                    />
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-        </div>
-        {saveError && (
-          <p className="text-sm text-destructive">{saveError}</p>
-        )}
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button onClick={onSave} disabled={saving || !form.name}>
-            {saving ? 'Saving...' : 'Save'}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   )
 }

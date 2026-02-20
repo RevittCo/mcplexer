@@ -1,8 +1,11 @@
-.PHONY: build run dev start stop setup test lint clean web-build go-build secret \
+.PHONY: build install run dev start stop setup test lint clean uninstall web-build go-build secret \
 	electron-setup electron-dev electron-build go-build-platforms \
-	electron-package-mac electron-package-win electron-package-linux
+	electron-package-mac electron-package-linux
 
 build: web-build go-build
+
+install: build
+	./bin/mcplexer setup
 
 web-build:
 	cd web && npm ci && npm run build
@@ -26,6 +29,9 @@ stop:
 setup:
 	./bin/mcplexer setup
 
+status:
+	./bin/mcplexer status
+
 test:
 	go test ./...
 
@@ -41,6 +47,13 @@ secret:
 
 clean:
 	rm -rf bin/ web/dist/
+
+uninstall:
+	-./bin/mcplexer daemon stop 2>/dev/null
+	-./bin/mcplexer daemon uninstall 2>/dev/null
+	rm -f /usr/local/bin/mcplexer
+	rm -rf ~/.mcplexer/bin/
+	@echo "MCPlexer uninstalled"
 
 # Electron targets
 electron-setup:
@@ -60,16 +73,11 @@ go-build-platforms:
 	GOOS=darwin GOARCH=arm64 go build -o bin/darwin/arm64/mcplexer ./cmd/mcplexer
 	GOOS=darwin GOARCH=amd64 go build -o bin/darwin/amd64/mcplexer ./cmd/mcplexer
 	GOOS=linux GOARCH=amd64 go build -o bin/linux/amd64/mcplexer ./cmd/mcplexer
-	GOOS=windows GOARCH=amd64 go build -o bin/windows/amd64/mcplexer.exe ./cmd/mcplexer
 
 # Platform-specific electron packaging
 electron-package-mac: web-build electron-setup
 	GOOS=darwin GOARCH=arm64 go build -o electron/resources/bin/mcplexer ./cmd/mcplexer
 	cd electron && npm run build && npm run package:mac
-
-electron-package-win: web-build electron-setup
-	GOOS=windows GOARCH=amd64 go build -o electron/resources/bin/mcplexer.exe ./cmd/mcplexer
-	cd electron && npm run build && npm run package:win
 
 electron-package-linux: web-build electron-setup
 	GOOS=linux GOARCH=amd64 go build -o electron/resources/bin/mcplexer ./cmd/mcplexer

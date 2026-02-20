@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { AuditRecord } from '@/api/types'
+import { getBackoffDelay } from '@/lib/sse-backoff'
 
 interface AuditStreamFilter {
   workspace_id?: string
@@ -58,7 +59,7 @@ export function useAuditStream(filter: AuditStreamFilter) {
         esRef.current = null
         setConnected(false)
 
-        const delay = Math.min(1000 * 2 ** retryRef.current, 30000)
+        const delay = getBackoffDelay(retryRef.current)
         retryRef.current++
         retryTimeout = setTimeout(connect, delay)
       }

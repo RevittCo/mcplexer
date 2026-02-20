@@ -20,11 +20,6 @@ const BuiltinPrefix = "mcpx__"
 // legacyBuiltinPrefix is the old prefix, kept for backward compatibility.
 const legacyBuiltinPrefix = "mcplexer__"
 
-// isBuiltinTool returns true if the tool name uses the built-in prefix.
-func isBuiltinTool(name string) bool {
-	return strings.HasPrefix(name, BuiltinPrefix)
-}
-
 // normalizeBuiltinName converts legacy mcplexer__ prefixed names to mcpx__.
 func normalizeBuiltinName(name string) string {
 	if after, ok := strings.CutPrefix(name, legacyBuiltinPrefix); ok {

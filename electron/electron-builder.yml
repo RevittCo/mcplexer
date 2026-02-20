@@ -14,17 +14,15 @@ files:
 extraResources:
   - from: "resources/bin"
     to: "bin"
+  - from: "assets/tray"
+    to: "tray"
 
 mac:
   category: public.app-category.developer-tools
+  icon: assets/icon.icns
   target:
     - target: dmg
       arch: [arm64, x64]
-
-win:
-  target:
-    - target: nsis
-      arch: [x64]
 
 linux:
   category: Development
@@ -32,6 +30,3 @@ linux:
     - target: AppImage
       arch: [x64]
 
-nsis:
-  oneClick: false
-  allowToChangeInstallationDirectory: true

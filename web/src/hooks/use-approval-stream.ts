@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ApprovalEvent, ToolApproval } from '@/api/types'
+import { getBackoffDelay } from '@/lib/sse-backoff'
 
 export function useApprovalStream() {
   const [pending, setPending] = useState<ToolApproval[]>([])
@@ -44,7 +45,7 @@ export function useApprovalStream() {
         esRef.current = null
         setConnected(false)
 
-        const delay = Math.min(1000 * 2 ** retryRef.current, 30000)
+        const delay = getBackoffDelay(retryRef.current)
         retryRef.current++
         retryTimeout = setTimeout(connect, delay)
       }

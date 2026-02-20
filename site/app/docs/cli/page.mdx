@@ -37,16 +37,11 @@ mcplexer serve --mode=stdio --socket=/tmp/mcplexer.sock`}
 Bridge stdin/stdout to a running MCPlexer daemon socket. This allows MCP clients that only support stdio to connect to a daemon-mode MCPlexer instance.
 
 <TerminalBlock title="terminal">
-{`# Connect to a local daemon
-mcplexer connect --socket=/tmp/mcplexer.sock
-
-# Connect to MCPlexer running inside a Docker container
-mcplexer connect --docker=my-container`}
+{`mcplexer connect --socket=/tmp/mcplexer.sock`}
 </TerminalBlock>
 
 <PropTable props={[
   { name: "--socket", type: "string", description: "Path to the Unix socket. Can also be set via MCPLEXER_SOCKET_PATH." },
-  { name: "--docker", type: "string", description: "Docker container name or ID. Can also be set via MCPLEXER_DOCKER_CONTAINER." },
 ]} />
 
 <Callout type="tip" title="Environment variables">
@@ -67,7 +62,7 @@ Create the SQLite database and a default YAML configuration file. Run this once 
 
 ## setup
 
-Launch the interactive setup wizard. Walks you through creating your first workspace, downstream server, route rule, and auth scope.
+Run the one-step setup: starts the daemon, writes the Claude Desktop config, and opens the dashboard.
 
 <TerminalBlock title="terminal">
 {`mcplexer setup`}
@@ -80,10 +75,11 @@ Print a summary of the current MCPlexer state — workspace count, server count,
 <TerminalBlock title="terminal">
 {`mcplexer status
 
-# Workspaces:    2
-# Servers:       3
-# Active:        1
-# Sessions:      0`}
+# MCPlexer Status (db: ~/.mcplexer/mcplexer.db)
+#   Workspaces:         2
+#   Downstream servers: 3
+#   Auth scopes:        1
+#   Active sessions:    0`}
 </TerminalBlock>
 
 ## dry-run
@@ -183,9 +179,7 @@ Check whether the daemon is running.
 <TerminalBlock title="terminal">
 {`mcplexer daemon status
 
-# Daemon: running (PID 12345)
-# Socket: /tmp/mcplexer.sock
-# Uptime: 2h 15m`}
+# MCPlexer daemon: running (PID 12345)`}
 </TerminalBlock>
 
 ### daemon logs
@@ -207,7 +201,7 @@ Run a read-only MCP control server over stdio. This exposes MCPlexer's internal 
 Set `MCPLEXER_CONTROL_READONLY=true` to enforce read-only mode.
 
 <PropTable props={[
-  { name: "MCPLEXER_CONTROL_READONLY", type: "env var", default: "false", description: "When true, the control server only exposes read operations." },
+  { name: "MCPLEXER_CONTROL_READONLY", type: "env var", default: "true", description: "When true, the control server only exposes read operations." },
 ]} />
 
 <PrevNextNav />

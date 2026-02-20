@@ -31,7 +31,7 @@ func dataDir() (string, error) {
 
 func cmdDaemon(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: mcplexer daemon <start|stop|status|logs>")
+		return fmt.Errorf("usage: mcplexer daemon <start|stop|status|logs|uninstall>")
 	}
 
 	switch args[0] {
@@ -43,8 +43,10 @@ func cmdDaemon(args []string) error {
 		return daemonStatus()
 	case "logs":
 		return daemonLogs(args[1:])
+	case "uninstall":
+		return daemonUninstall()
 	default:
-		return fmt.Errorf("unknown daemon command: %s\nUsage: mcplexer daemon <start|stop|status|logs>", args[0])
+		return fmt.Errorf("unknown daemon command: %s\nUsage: mcplexer daemon <start|stop|status|logs|uninstall>", args[0])
 	}
 }
 
@@ -61,6 +63,14 @@ func daemonStart(args []string) error {
 		}
 		// Stale PID file
 		os.Remove(filepath.Join(dir, pidFile))
+	}
+
+	if launchdInstalled() {
+		if err := launchdStart(); err != nil {
+			return fmt.Errorf("launchctl start: %w", err)
+		}
+		fmt.Println("MCPlexer started via launchd")
+		return nil
 	}
 
 	// Parse flags with defaults
@@ -81,7 +91,7 @@ func daemonStart(args []string) error {
 	if err != nil {
 		return fmt.Errorf("open log file: %w", err)
 	}
-	defer lf.Close()
+	defer func() { _ = lf.Close() }()
 
 	// Build serve command arguments
 	exe, err := os.Executable()
@@ -127,6 +137,14 @@ func daemonStart(args []string) error {
 }
 
 func daemonStop() error {
+	if launchdInstalled() {
+		if err := launchdStop(); err != nil {
+			return fmt.Errorf("launchctl stop: %w", err)
+		}
+		fmt.Println("MCPlexer stopped via launchd")
+		return nil
+	}
+
 	dir, err := dataDir()
 	if err != nil {
 		return err
@@ -162,6 +180,16 @@ func daemonStop() error {
 }
 
 func daemonStatus() error {
+	if launchdInstalled() {
+		running, _ := launchdStatus()
+		if running {
+			fmt.Println("MCPlexer daemon: running (launchd)")
+		} else {
+			fmt.Println("MCPlexer daemon: stopped (launchd installed)")
+		}
+		return nil
+	}
+
 	dir, err := dataDir()
 	if err != nil {
 		return err
@@ -207,6 +235,18 @@ func daemonLogs(args []string) error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
+}
+
+func daemonUninstall() error {
+	if !launchdInstalled() {
+		fmt.Println("No launchd agent installed")
+		return nil
+	}
+	if err := uninstallLaunchd(); err != nil {
+		return fmt.Errorf("uninstall launchd: %w", err)
+	}
+	fmt.Println("MCPlexer launchd agent uninstalled")
+	return nil
 }
 
 // readPID reads the PID from the PID file. Returns 0, false if not found.

@@ -68,7 +68,7 @@ func (h *oidcDiscoverHandler) discover(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, fmt.Sprintf("failed to fetch discovery document: %v", err))
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		writeError(w, http.StatusBadGateway,

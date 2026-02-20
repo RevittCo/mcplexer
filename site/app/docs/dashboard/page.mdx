@@ -4,14 +4,14 @@ import { PrevNextNav } from "@/components/docs/prev-next-nav";
 
 # Dashboard & Web UI
 
-MCPlexer includes a built-in web dashboard for real-time monitoring, configuration management, and debugging. It's available at `http://localhost:8080` when running in HTTP mode.
+MCPlexer includes a built-in web dashboard for real-time monitoring, configuration management, and debugging. It's available at `http://localhost:3333` when running the daemon or desktop app.
 
 <TerminalBlock title="terminal">
-{`mcplexer serve --mode=http --port=8080`}
+{`mcplexer serve --mode=http --addr=:8080`}
 </TerminalBlock>
 
 <Callout type="info" title="Local only">
-  The web UI has no authentication — it's designed for local use only. Do not expose port 8080 to the public internet without an auth proxy.
+  The web UI has no authentication — it's designed for local use only. Do not expose the listen address to the public internet without an auth proxy.
 </Callout>
 
 ## Dashboard

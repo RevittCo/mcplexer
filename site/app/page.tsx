@@ -160,9 +160,7 @@ export default function HomePage() {
           {/* CTAs */}
           <div className="mt-8 flex flex-col sm:flex-row items-start gap-3">
             <Link
-              href={config.releases}
-              target="_blank"
-              rel="noopener noreferrer"
+              href="/docs/quickstart"
               className="group flex items-center gap-2 bg-cyan px-5 py-2.5 text-sm font-medium text-bg hover:bg-cyan-light transition-colors"
             >
               Get Started
@@ -332,7 +330,7 @@ export default function HomePage() {
               context
             </h2>
             <p className="mt-4 text-text-muted text-sm max-w-2xl mx-auto">
-              In stdio mode, {config.name} reads your actual working directory
+              In stdio mode, MCPlexer reads your actual working directory
               from the OS {"\u2014"} no client can fake it. The most specific
               matching workspace wins. Route rules evaluate deny-first through
               the workspace ancestor chain.
@@ -528,7 +526,7 @@ export default function HomePage() {
                 </span>
               </div>
               <p className="mt-4 text-xs text-text-dim">
-                Configure {config.name} from Claude or any MCP client. Read-only
+                Configure MCPlexer from Claude or any MCP client. Read-only
                 mode available for safe introspection.
               </p>
             </div>

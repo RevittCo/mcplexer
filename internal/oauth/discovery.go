@@ -99,7 +99,7 @@ func DynamicClientRegister(
 	if err != nil {
 		return nil, fmt.Errorf("dcr request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -134,7 +134,7 @@ func fetchJSON[T any](ctx context.Context, url string) (*T, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("fetch %s: status %d", url, resp.StatusCode)
