@@ -8,18 +8,16 @@ The MCPlexer desktop app is an Electron wrapper around the web UI and Go binary.
 
 ## Running from Source
 
-Build the Go binary and web UI, then start the Electron app:
+One command builds everything and launches the desktop app:
 
 <TerminalBlock title="terminal">
-{`make web-build
-make go-build
-cd electron && npm run dev`}
+{`make electron-run`}
 </TerminalBlock>
 
-This starts the Electron app in development mode with hot-reload for the Electron shell. The Go binary runs as a child process managed by the Electron main process.
+This builds the Go binary, web UI, installs Electron dependencies, and starts the app in development mode with hot-reload. The Go binary runs as a child process managed by the Electron main process.
 
 <Callout type="info" title="Prerequisites">
-  You need Node.js, npm, Go, and make installed. Run `npm install` in the `electron/` directory on first setup.
+  You need Node.js 20+, npm, Go 1.25+, and make installed.
 </Callout>
 
 ## Features
@@ -58,8 +56,11 @@ To build the desktop app for your platform:
 
 <TerminalBlock title="terminal">
 {`make electron-package-mac    # macOS
-make electron-package-win    # Windows
 make electron-package-linux  # Linux`}
 </TerminalBlock>
+
+<Callout type="info" title="Platform support">
+  The desktop app supports macOS and Linux. Windows is not currently supported.
+</Callout>
 
 <PrevNextNav />

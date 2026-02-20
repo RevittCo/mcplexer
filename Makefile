@@ -1,5 +1,5 @@
 .PHONY: build install run dev start stop setup test lint clean uninstall web-build go-build secret \
-	electron-setup electron-dev electron-build go-build-platforms \
+	electron-setup electron-run electron-dev electron-build go-build-platforms \
 	electron-package-mac electron-package-linux
 
 build: web-build go-build
@@ -58,6 +58,11 @@ uninstall:
 # Electron targets
 electron-setup:
 	cd electron && npm ci
+
+electron-run: web-build go-build electron-setup
+	mkdir -p electron/resources/bin
+	cp bin/mcplexer electron/resources/bin/
+	cd electron && npm run dev
 
 electron-dev: electron-setup
 	cd electron && npm run dev
