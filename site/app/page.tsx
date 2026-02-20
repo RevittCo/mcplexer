@@ -104,7 +104,7 @@ const steps = [
   {
     num: "01",
     title: "Install",
-    description: `Download the desktop app (macOS / Windows / Linux) or go install the CLI. Single binary, no dependencies.`,
+    description: `Clone the repo and run make install. Builds the Go binary, web UI, and Electron shell, then installs MCPlexer.app to /Applications. macOS (Apple Silicon & Intel). CLI available on all platforms.`,
   },
   {
     num: "02",
@@ -191,26 +191,25 @@ export default function HomePage() {
                 <div>
                   <span className="text-text-muted">$ </span>
                   <span className="text-text">
-                    {config.name} setup
+                    make install
                   </span>
                 </div>
                 <div className="mt-2">
                   <span className="text-green">{"✓"}</span>
-                  <span className="text-text-muted"> daemon started on </span>
-                  <span className="text-cyan">:3333</span>
+                  <span className="text-text-muted"> go binary built</span>
                 </div>
                 <div>
                   <span className="text-green">{"✓"}</span>
-                  <span className="text-text-muted"> claude desktop config updated</span>
+                  <span className="text-text-muted"> web UI compiled</span>
                 </div>
                 <div>
                   <span className="text-green">{"✓"}</span>
-                  <span className="text-text-muted"> dashboard </span>
-                  <span className="text-text-dim">{"\u2192"} </span>
-                  <span className="text-cyan">http://localhost:3333</span>
+                  <span className="text-text-muted"> electron app packaged</span>
                 </div>
-                <div className="mt-1">
-                  <span className="text-text-dim">restart Claude Desktop to connect.</span>
+                <div>
+                  <span className="text-green">{"✓"}</span>
+                  <span className="text-text-muted"> MCPlexer.app installed to </span>
+                  <span className="text-cyan">/Applications</span>
                 </div>
 
                 <div className="mt-4 border-t border-border pt-4">
@@ -464,7 +463,7 @@ export default function HomePage() {
               </div>
               <p className="mt-4 text-xs text-text-dim">
                 Electron app with system tray, native approval notifications,
-                and bundled Go binary. macOS, Windows, Linux.
+                and bundled Go binary. macOS (Apple Silicon & Intel).
               </p>
             </div>
 
@@ -604,8 +603,8 @@ export default function HomePage() {
               Ready to take control?
             </h2>
             <p className="text-text-muted text-sm mb-10 max-w-lg mx-auto">
-              Download the desktop app for macOS, Windows, or Linux.
-              Or install the CLI if you prefer the terminal.
+              Build and install the desktop app on macOS (Apple Silicon & Intel).
+              Or install the CLI on any platform.
             </p>
 
             <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mb-8">

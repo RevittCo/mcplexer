@@ -93,12 +93,14 @@
     scroll-behavior: smooth;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
   }
 
   body {
     @apply bg-background text-foreground;
     font-family: var(--font-sans);
     font-feature-settings: "liga" 1, "calt" 1;
+    overflow-x: hidden;
   }
 
   a, button, [role="button"], [type="button"], [type="submit"], [type="reset"],

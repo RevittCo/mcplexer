@@ -1,10 +1,24 @@
-.PHONY: build install run dev start stop setup test lint clean uninstall web-build go-build secret \
+.PHONY: build install install-cli run dev start stop setup test lint clean uninstall web-build go-build secret \
 	electron-setup electron-run electron-dev electron-build go-build-platforms \
 	electron-package-mac electron-package-linux
 
 build: web-build go-build
 
-install: build
+UNAME_ARCH := $(shell uname -m)
+ifeq ($(UNAME_ARCH),arm64)
+  GOARCH := arm64
+  ELECTRON_MAC_DIR := mac-arm64
+else
+  GOARCH := amd64
+  ELECTRON_MAC_DIR := mac
+endif
+
+install: electron-package-mac
+	rm -rf /Applications/MCPlexer.app
+	cp -R electron/release/$(ELECTRON_MAC_DIR)/MCPlexer.app /Applications/
+	@echo "MCPlexer.app installed to /Applications"
+
+install-cli: build
 	./bin/mcplexer setup
 
 web-build:
@@ -51,6 +65,7 @@ clean:
 uninstall:
 	-./bin/mcplexer daemon stop 2>/dev/null
 	-./bin/mcplexer daemon uninstall 2>/dev/null
+	rm -rf /Applications/MCPlexer.app
 	rm -f /usr/local/bin/mcplexer
 	rm -rf ~/.mcplexer/bin/
 	@echo "MCPlexer uninstalled"
@@ -81,7 +96,7 @@ go-build-platforms:
 
 # Platform-specific electron packaging
 electron-package-mac: web-build electron-setup
-	GOOS=darwin GOARCH=arm64 go build -o electron/resources/bin/mcplexer ./cmd/mcplexer
+	GOOS=darwin GOARCH=$(GOARCH) go build -o electron/resources/bin/mcplexer ./cmd/mcplexer
 	cd electron && npm run build && npm run package:mac
 
 electron-package-linux: web-build electron-setup

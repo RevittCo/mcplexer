@@ -27,13 +27,32 @@ Your working directory determines which policies apply — tamper-proof in stdio
 
 ## Quick Start
 
-### One-command setup (Claude Desktop)
+### Desktop App (macOS)
 
 ```bash
+git clone https://github.com/revittco/mcplexer.git
+cd mcplexer
+make install
+```
+
+This builds the Go backend, web UI, and Electron shell, then installs `MCPlexer.app` to `/Applications`. Open it from Launchpad, Spotlight, or the Dock.
+
+### CLI-only (all platforms)
+
+```bash
+go install github.com/revittco/mcplexer@latest
 mcplexer setup
 ```
 
-This starts the daemon, configures Claude Desktop, and opens the web dashboard. Restart Claude Desktop to connect.
+Or from source:
+
+```bash
+git clone https://github.com/revittco/mcplexer.git
+cd mcplexer
+make install-cli
+```
+
+This builds the binary, configures Claude Desktop, starts the daemon, and opens the web dashboard.
 
 ### Manual setup
 
@@ -50,39 +69,6 @@ mcplexer serve --mode=http --addr=:8080
 # Run as background daemon with Unix socket
 mcplexer daemon start --addr=:3333 --socket=/tmp/mcplexer.sock
 ```
-
-### Install
-
-```bash
-go install github.com/revittco/mcplexer@latest
-```
-
-Or build from source:
-
-```bash
-git clone https://github.com/revittco/mcplexer.git
-cd mcplexer
-make build
-# Binary at ./bin/mcplexer
-```
-
-### Desktop App (macOS & Linux only)
-
-Prebuilt Electron installers are not published anymore. Run the desktop app locally:
-
-```bash
-# from repo root
-make web-build
-make go-build
-cd electron
-npm ci
-npm run dev
-```
-
-Notes:
-- The Electron app expects the backend binary at `bin/mcplexer`.
-- `npm run dev` compiles Electron TypeScript and launches the desktop shell.
-- Windows is not supported for the desktop app.
 
 ## Configuration
 

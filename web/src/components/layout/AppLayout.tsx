@@ -215,7 +215,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         </SheetContent>
       </Sheet>
 
-      <div className="flex flex-1 flex-col bg-background">
+      <div className="flex min-w-0 flex-1 flex-col bg-background">
         {/* Mobile header */}
         <div className="flex h-14 items-center gap-2.5 border-b border-border px-4 md:hidden">
           <button
@@ -229,7 +229,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         </div>
 
         <div className="h-px bg-gradient-to-r from-primary/20 via-primary/5 to-transparent" />
-        <main className="flex-1 p-4 md:p-6">{children}</main>
+        <main className="flex-1 overflow-x-hidden p-4 md:p-6">{children}</main>
       </div>
     </div>
   )

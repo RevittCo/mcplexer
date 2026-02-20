@@ -31,10 +31,12 @@ MCP Gateway (Multiplexer) with Web UI.
 - No ORM — raw database/sql with hand-written queries
 
 ## Commands
+- `make install` — build + package + install desktop app to /Applications
+- `make install-cli` — build + setup CLI daemon (no Electron)
 - `make build` — build Go binary + web UI
 - `make run` — build + start daemon
 - `make dev` — run in HTTP mode for development
-- `make electron-run` — build everything + launch desktop app
+- `make electron-run` — build everything + launch desktop app (dev mode)
 - `make test` — run Go tests
 - `make lint` — run golangci-lint
 - `cd web && npm run dev` — run web UI dev server
