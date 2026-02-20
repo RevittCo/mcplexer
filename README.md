@@ -64,10 +64,10 @@ mcplexer init
 mcplexer serve --mode=stdio
 
 # Run with web UI
-mcplexer serve --mode=http --addr=:8080
+mcplexer serve --mode=http --addr=127.0.0.1:8080
 
 # Run as background daemon with Unix socket
-mcplexer daemon start --addr=:3333 --socket=/tmp/mcplexer.sock
+mcplexer daemon start --addr=127.0.0.1:3333 --socket=/tmp/mcplexer.sock
 ```
 
 ## Configuration
@@ -102,7 +102,7 @@ YAML-sourced items are auto-pruned when removed from the config file. Items crea
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `MCPLEXER_MODE` | `stdio` | Transport mode: `stdio` or `http` |
-| `MCPLEXER_HTTP_ADDR` | `:8080` | HTTP listen address |
+| `MCPLEXER_HTTP_ADDR` | `127.0.0.1:8080` | HTTP listen address |
 | `MCPLEXER_DB_DSN` | `~/.mcplexer/mcplexer.db` | Database path |
 | `MCPLEXER_CONFIG` | `~/.mcplexer/mcplexer.yaml` | Config file path |
 | `MCPLEXER_AGE_KEY` | auto-generated | Path to age identity file |

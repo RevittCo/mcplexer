@@ -92,7 +92,7 @@ func cmdSetup() error {
 			if err != nil {
 				return fmt.Errorf("resolve executable: %w", err)
 			}
-			if err := installLaunchd(exe, ":3333", "/tmp/mcplexer.sock"); err != nil {
+			if err := installLaunchd(exe, "127.0.0.1:3333", "/tmp/mcplexer.sock"); err != nil {
 				return fmt.Errorf("install launchd: %w", err)
 			}
 			fmt.Println("Launchd agent installed. MCPlexer will start automatically on boot.")

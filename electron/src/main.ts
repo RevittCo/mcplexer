@@ -1,4 +1,4 @@
-import { app, BrowserWindow } from "electron";
+import { app, BrowserWindow, shell } from "electron";
 import { ChildProcess, spawn } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
@@ -23,7 +23,16 @@ export function getServerUrl(): string {
   if (serverPort === null) {
     throw new Error("Server port not yet assigned");
   }
-  return `http://localhost:${serverPort}`;
+  return `http://127.0.0.1:${serverPort}`;
+}
+
+function isSafeNavigationURL(rawUrl: string): boolean {
+  try {
+    const parsed = new URL(rawUrl);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
 }
 
 function createWindow(): void {
@@ -38,10 +47,31 @@ function createWindow(): void {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
+      webSecurity: true,
+      allowRunningInsecureContent: false,
     },
     show: false,
     title: "MCPlexer",
     icon: createMarkIcon("app", 256),
+  });
+
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (isSafeNavigationURL(url)) {
+      void shell.openExternal(url);
+    }
+    return { action: "deny" };
+  });
+
+  mainWindow.webContents.on("will-attach-webview", (event) => {
+    event.preventDefault();
+  });
+
+  mainWindow.webContents.on("will-navigate", (event, url) => {
+    if (!isSafeNavigationURL(url)) {
+      event.preventDefault();
+      console.warn(`[mcplexer] blocked unsafe navigation: ${url}`);
+    }
   });
 
   mainWindow.once("ready-to-show", () => {
@@ -65,9 +95,10 @@ function createWindow(): void {
 function spawnGoServer(port: number): ChildProcess {
   const binaryPath = getGoBinaryPath();
   const socketPath = path.join(os.tmpdir(), "mcplexer.sock");
-  console.log(`[mcplexer] Starting Go server: ${binaryPath} serve --mode=http --addr=:${port} --socket=${socketPath}`);
+  const listenAddr = `127.0.0.1:${port}`;
+  console.log(`[mcplexer] Starting Go server: ${binaryPath} serve --mode=http --addr=${listenAddr} --socket=${socketPath}`);
 
-  const child = spawn(binaryPath, ["serve", "--mode=http", `--addr=:${port}`, `--socket=${socketPath}`], {
+  const child = spawn(binaryPath, ["serve", "--mode=http", `--addr=${listenAddr}`, `--socket=${socketPath}`], {
     stdio: "pipe",
     env: { ...process.env },
   });
@@ -143,7 +174,7 @@ async function startApp(): Promise<void> {
 
     goProcess = spawnGoServer(serverPort);
 
-    const serverUrl = `http://localhost:${serverPort}`;
+    const serverUrl = getServerUrl();
     console.log(`[mcplexer] Waiting for health check at ${serverUrl}/api/v1/health`);
     await waitForHealth(serverUrl);
     console.log("[mcplexer] Go server is healthy");

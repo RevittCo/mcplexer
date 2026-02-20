@@ -20,7 +20,7 @@ Start the MCP gateway. This is the primary command — it launches MCPlexer and 
 mcplexer serve
 
 # HTTP mode with web dashboard
-mcplexer serve --mode=http --addr=:8080
+mcplexer serve --mode=http --addr=127.0.0.1:8080
 
 # Socket mode
 mcplexer serve --mode=stdio --socket=/tmp/mcplexer.sock`}
@@ -28,7 +28,7 @@ mcplexer serve --mode=stdio --socket=/tmp/mcplexer.sock`}
 
 <PropTable props={[
   { name: "--mode", type: "string", default: "stdio", description: "Transport mode: stdio, http, or socket." },
-  { name: "--addr", type: "string", default: ":8080", description: "Listen address for HTTP mode." },
+  { name: "--addr", type: "string", default: "127.0.0.1:8080", description: "Listen address for HTTP mode." },
   { name: "--socket", type: "string", description: "Unix socket path for socket mode." },
 ]} />
 

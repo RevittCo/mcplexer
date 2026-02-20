@@ -61,9 +61,7 @@ function showApprovalNotification(approval: Approval): void {
     if (win) {
       win.show();
       win.focus();
-      void win.webContents.executeJavaScript(
-        `window.location.hash = '/approvals'`
-      );
+      void win.loadURL(`${getServerUrl()}/approvals`);
     }
   });
 

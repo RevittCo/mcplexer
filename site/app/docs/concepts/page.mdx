@@ -103,7 +103,7 @@ The client spawns MCPlexer as a child process and communicates over stdin/stdout
 MCPlexer runs as a persistent HTTP server with a REST API and WebSocket support. The web dashboard is available in this mode.
 
 <TerminalBlock title="terminal">
-{`mcplexer serve --mode=http --addr=:8080`}
+{`mcplexer serve --mode=http --addr=127.0.0.1:8080`}
 </TerminalBlock>
 
 **When to use:** When you need the web dashboard, REST API access, or want MCPlexer running as a long-lived service. Required for multi-client or remote access scenarios.

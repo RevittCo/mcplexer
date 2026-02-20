@@ -11,6 +11,8 @@ files:
   - "!src/**/*"
   - "!node_modules/**/*"
 
+asar: true
+
 extraResources:
   - from: "resources/bin"
     to: "bin"
@@ -29,4 +31,3 @@ linux:
   target:
     - target: AppImage
       arch: [x64]
-

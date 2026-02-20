@@ -62,9 +62,9 @@ func (fm *FlowManager) AuthorizeURL(ctx context.Context, authScopeID string) (st
 func (fm *FlowManager) buildAuthorizeURL(
 	p *store.OAuthProvider, state, codeVerifier string,
 ) (string, error) {
-	u, err := url.Parse(p.AuthorizeURL)
+	u, err := parseOAuthURL(p.AuthorizeURL)
 	if err != nil {
-		return "", fmt.Errorf("parse authorize url: %w", err)
+		return "", fmt.Errorf("invalid authorize url: %w", err)
 	}
 
 	q := u.Query()
@@ -90,6 +90,20 @@ func (fm *FlowManager) buildAuthorizeURL(
 
 	u.RawQuery = q.Encode()
 	return u.String(), nil
+}
+
+func parseOAuthURL(raw string) (*url.URL, error) {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return nil, fmt.Errorf("parse url: %w", err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return nil, fmt.Errorf("url must use http or https")
+	}
+	if u.Host == "" {
+		return nil, fmt.Errorf("url must include host")
+	}
+	return u, nil
 }
 
 // CallbackURL returns the full OAuth callback URL for this instance.

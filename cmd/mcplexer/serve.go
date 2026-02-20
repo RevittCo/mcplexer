@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/revittco/mcplexer/internal/api"
 	"github.com/revittco/mcplexer/internal/approval"
@@ -138,8 +139,13 @@ func runHTTP(ctx context.Context, cfg *Config, db *sqlite.DB, cfgSvc *config.Ser
 	})
 
 	srv := &http.Server{
-		Addr:    cfg.HTTPAddr,
-		Handler: router,
+		Addr:              cfg.HTTPAddr,
+		Handler:           router,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    1 << 20, // 1 MiB
 	}
 
 	errCh := make(chan error, 1)
@@ -241,7 +247,7 @@ func buildAuthInjector(cfg *Config, db *sqlite.DB) (*auth.Injector, *oauth.FlowM
 
 	externalURL := cfg.ExternalURL
 	if externalURL == "" && cfg.Mode == "http" {
-		externalURL = "http://localhost" + cfg.HTTPAddr
+		externalURL = httpURLFromAddr(cfg.HTTPAddr)
 	}
 
 	if enc != nil {
@@ -290,6 +296,11 @@ func runHTTPAndSocket(ctx context.Context, cfg *Config, db *sqlite.DB, cfgSvc *c
 			ToolCache:       tc,
 		})
 		srv := &http.Server{Addr: cfg.HTTPAddr, Handler: router}
+		srv.ReadHeaderTimeout = 10 * time.Second
+		srv.ReadTimeout = 15 * time.Second
+		srv.WriteTimeout = 30 * time.Second
+		srv.IdleTimeout = 60 * time.Second
+		srv.MaxHeaderBytes = 1 << 20 // 1 MiB
 		errCh := make(chan error, 1)
 		go func() {
 			slog.Info("http server listening", "addr", cfg.HTTPAddr)

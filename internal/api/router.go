@@ -22,13 +22,13 @@ type RouterDeps struct {
 	Store           store.Store
 	ConfigSvc       *config.Service
 	Engine          *routing.Engine
-	Manager         *downstream.Manager    // optional; enables tool discovery
-	FlowManager     *oauth.FlowManager     // optional; enables OAuth flows
-	Encryptor       *secrets.AgeEncryptor  // optional; enables secret encryption
-	AuditBus        *audit.Bus             // optional; enables SSE audit stream
-	ApprovalManager *approval.Manager      // optional; enables approval system
-	ApprovalBus     *approval.Bus          // optional; enables approval SSE stream
-	ToolCache       *cache.ToolCache       // optional; enables cache stats/flush API
+	Manager         *downstream.Manager   // optional; enables tool discovery
+	FlowManager     *oauth.FlowManager    // optional; enables OAuth flows
+	Encryptor       *secrets.AgeEncryptor // optional; enables secret encryption
+	AuditBus        *audit.Bus            // optional; enables SSE audit stream
+	ApprovalManager *approval.Manager     // optional; enables approval system
+	ApprovalBus     *approval.Bus         // optional; enables approval SSE stream
+	ToolCache       *cache.ToolCache      // optional; enables cache stats/flush API
 }
 
 // NewRouter creates an http.Handler with all API routes and SPA fallback.
@@ -164,11 +164,15 @@ func NewRouter(deps RouterDeps) http.Handler {
 		mux.Handle("/", spaHandler)
 	}
 
-	// Apply middleware chain: CORS -> RequestID -> Logging -> mux
+	// Apply middleware chain around API + SPA handlers.
 	var handler http.Handler = mux
+	handler = corsMiddleware(handler)
+	handler = requireJSONContentTypeMiddleware(handler)
+	handler = requestBodyLimitMiddleware(handler)
+	handler = browserOriginProtectionMiddleware(handler)
+	handler = securityHeadersMiddleware(handler)
 	handler = loggingMiddleware(handler)
 	handler = requestIDMiddleware(handler)
-	handler = corsMiddleware(handler)
 
 	return handler
 }

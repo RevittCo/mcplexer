@@ -118,7 +118,7 @@ When MCPlexer starts, it syncs the YAML file to the database:
 
 <PropTable props={[
   { name: "MCPLEXER_MODE", type: "string", default: "stdio", description: "Transport mode: stdio, http, or socket." },
-  { name: "MCPLEXER_HTTP_ADDR", type: "string", default: ":8080", description: "Listen address for HTTP mode." },
+  { name: "MCPLEXER_HTTP_ADDR", type: "string", default: "127.0.0.1:8080", description: "Listen address for HTTP mode." },
   { name: "MCPLEXER_DB_DRIVER", type: "string", default: "sqlite", description: "Database driver: sqlite or postgres." },
   { name: "MCPLEXER_DB_DSN", type: "string", default: "~/.mcplexer/mcplexer.db", description: "Database connection string." },
   { name: "MCPLEXER_CONFIG", type: "string", default: "~/.mcplexer/mcplexer.yaml", description: "Path to the YAML config file." },

@@ -4,6 +4,7 @@ import remarkGfm from "remark-gfm";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  poweredByHeader: false,
   output: "export",
   basePath: "/mcplexer",
   pageExtensions: ["ts", "tsx", "md", "mdx"],

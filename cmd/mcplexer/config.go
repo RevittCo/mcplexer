@@ -9,7 +9,7 @@ import (
 // Config holds application configuration loaded from environment variables.
 type Config struct {
 	Mode        string     // "stdio" or "http"
-	HTTPAddr    string     // ":8080"
+	HTTPAddr    string     // "127.0.0.1:8080"
 	DBDriver    string     // "sqlite" or "postgres"
 	DBDSN       string     // file path or connection string
 	AgeKeyPath  string     // path to age identity file
@@ -32,7 +32,7 @@ func defaultDataPath(filename string) string {
 func loadConfig() (*Config, error) {
 	cfg := &Config{
 		Mode:        envOr("MCPLEXER_MODE", "stdio"),
-		HTTPAddr:    envOr("MCPLEXER_HTTP_ADDR", ":8080"),
+		HTTPAddr:    envOr("MCPLEXER_HTTP_ADDR", "127.0.0.1:8080"),
 		DBDriver:    envOr("MCPLEXER_DB_DRIVER", "sqlite"),
 		DBDSN:       envOr("MCPLEXER_DB_DSN", defaultDataPath("mcplexer.db")),
 		AgeKeyPath:  envOr("MCPLEXER_AGE_KEY", ""),

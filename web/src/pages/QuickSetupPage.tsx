@@ -34,6 +34,7 @@ import {
   RotateCcw,
   Zap,
 } from 'lucide-react'
+import { redirectToOAuth } from '@/lib/safe-redirect'
 
 type Step = 'pick' | 'configure' | 'workspace' | 'review' | 'connecting' | 'success'
 
@@ -149,7 +150,7 @@ export function QuickSetupPage() {
         account_label: accountLabel || undefined,
       })
       if (resp.authorize_url) {
-        window.location.href = resp.authorize_url
+        redirectToOAuth(resp.authorize_url)
       }
     } catch (err: unknown) {
       setConnectError(err instanceof Error ? err.message : 'Failed to connect')

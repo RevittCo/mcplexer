@@ -58,7 +58,7 @@ After=network.target
 Type=simple
 User=mcplexer
 Group=mcplexer
-ExecStart=/usr/local/bin/mcplexer serve --mode=http --addr=:8080
+ExecStart=/usr/local/bin/mcplexer serve --mode=http --addr=127.0.0.1:8080
 Restart=on-failure
 RestartSec=5
 WorkingDirectory=/home/mcplexer
@@ -84,7 +84,7 @@ Configure MCPlexer behavior through environment variables:
 | `MCPLEXER_LOG_LEVEL` | Log verbosity: `debug`, `info`, `warn`, `error` | `info` |
 | `MCPLEXER_DB_DSN` | Path to SQLite database | `~/.mcplexer/mcplexer.db` |
 | `MCPLEXER_CONFIG` | Path to YAML config file | `~/.mcplexer/mcplexer.yaml` |
-| `MCPLEXER_HTTP_ADDR` | HTTP listen address | `:8080` |
+| `MCPLEXER_HTTP_ADDR` | HTTP listen address | `127.0.0.1:8080` |
 | `MCPLEXER_CONTROL_READONLY` | Control server read-only mode | `true` |
 
 ## Production Checklist

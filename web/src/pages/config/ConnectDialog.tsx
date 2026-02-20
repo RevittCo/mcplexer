@@ -23,6 +23,7 @@ import { connectDownstream, getOAuthCapabilities, listWorkspaces } from '@/api/c
 import type { DownstreamServer, OAuthCapabilities } from '@/api/types'
 import { toast } from 'sonner'
 import { CopyButton } from '@/components/ui/copy-button'
+import { redirectToOAuth } from '@/lib/safe-redirect'
 
 interface ConnectDialogProps {
   open: boolean
@@ -88,7 +89,7 @@ export function ConnectDialog({ open, onClose, server, onConnected }: ConnectDia
       onConnected()
       onClose()
       if (resp.authorize_url) {
-        window.location.href = resp.authorize_url
+        redirectToOAuth(resp.authorize_url)
       }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to connect')

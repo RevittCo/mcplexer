@@ -23,7 +23,7 @@ func dataDir() (string, error) {
 		return "", fmt.Errorf("get home dir: %w", err)
 	}
 	dir := filepath.Join(home, ".mcplexer")
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0700); err != nil {
 		return "", fmt.Errorf("create data dir: %w", err)
 	}
 	return dir, nil
@@ -74,7 +74,7 @@ func daemonStart(args []string) error {
 	}
 
 	// Parse flags with defaults
-	addr := ":3333"
+	addr := "127.0.0.1:3333"
 	socketPath := "/tmp/mcplexer.sock"
 	for _, arg := range args {
 		if strings.HasPrefix(arg, "--addr=") {
@@ -132,7 +132,7 @@ func daemonStart(args []string) error {
 	fmt.Printf("MCPlexer daemon started on %s (PID %d)\n", addr, pid)
 	fmt.Printf("  Logs: %s\n", logPath)
 	fmt.Printf("  DB:   %s\n", filepath.Join(dir, dbFile))
-	fmt.Printf("  UI:   http://localhost%s\n", addr)
+	fmt.Printf("  UI:   %s\n", httpURLFromAddr(addr))
 	return nil
 }
 

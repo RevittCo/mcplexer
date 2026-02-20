@@ -2,6 +2,8 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 )
@@ -34,5 +36,19 @@ func writeErrorDetail(w http.ResponseWriter, status int, msg, detail string) {
 // decodeJSON reads and decodes a JSON request body into v.
 func decodeJSON(r *http.Request, v any) error {
 	defer func() { _ = r.Body.Close() }()
-	return json.NewDecoder(r.Body).Decode(v)
+
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(v); err != nil {
+		return err
+	}
+
+	// Enforce a single JSON value in the body.
+	if err := dec.Decode(&struct{}{}); err != nil {
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		return err
+	}
+	return errors.New("request body must contain only one JSON object")
 }

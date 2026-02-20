@@ -28,6 +28,7 @@ import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { AuthScopeDialog, emptyAuthScopeForm } from './AuthScopeDialog'
 import type { AuthScopeFormData } from './AuthScopeDialog'
+import { redirectToOAuth } from '@/lib/safe-redirect'
 
 export function AuthScopesPage() {
   const fetcher = useCallback(() => listAuthScopes(), [])
@@ -107,7 +108,7 @@ export function AuthScopesPage() {
   async function handleAuthenticate(scopeId: string) {
     try {
       const { authorize_url } = await getOAuthAuthorizeURL(scopeId)
-      window.location.href = authorize_url
+      redirectToOAuth(authorize_url)
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Failed to start authentication')
     }
