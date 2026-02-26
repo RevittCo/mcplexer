@@ -9,6 +9,7 @@ import (
 
 	"github.com/revittco/mcplexer/internal/approval"
 	"github.com/revittco/mcplexer/internal/audit"
+	"github.com/revittco/mcplexer/internal/config"
 	"github.com/revittco/mcplexer/internal/gateway"
 	"github.com/revittco/mcplexer/internal/routing"
 	"github.com/revittco/mcplexer/internal/store/sqlite"
@@ -24,6 +25,7 @@ func runSocket(
 	lister gateway.ToolLister,
 	auditor *audit.Logger,
 	approvalMgr *approval.Manager,
+	settingsSvc *config.SettingsService,
 ) error {
 	// Clean up stale socket file
 	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
@@ -58,7 +60,7 @@ func runSocket(
 			}
 			return fmt.Errorf("accept: %w", err)
 		}
-		go handleSocketConn(ctx, conn, s, engine, lister, auditor, approvalMgr)
+		go handleSocketConn(ctx, conn, s, engine, lister, auditor, approvalMgr, settingsSvc)
 	}
 }
 
@@ -70,12 +72,14 @@ func handleSocketConn(
 	lister gateway.ToolLister,
 	auditor *audit.Logger,
 	approvalMgr *approval.Manager,
+	settingsSvc *config.SettingsService,
 ) {
 	defer func() { _ = conn.Close() }()
 	slog.Info("socket connection accepted", "remote", conn.RemoteAddr())
 
 	gw := gateway.NewServer(s, engine, lister, auditor, gateway.TransportSocket,
-		gateway.WithApprovals(approvalMgr))
+		gateway.WithApprovals(approvalMgr),
+		gateway.WithSettings(settingsSvc))
 	if err := gw.RunConn(ctx, conn, conn); err != nil {
 		slog.Error("socket connection error", "err", err)
 	}

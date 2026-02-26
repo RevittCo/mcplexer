@@ -86,10 +86,73 @@ type ServerInfo struct {
 }
 
 // Tool represents an MCP tool definition.
+// Known fields (Name, Description, InputSchema) are extracted into struct
+// fields; everything else (annotations, title, outputSchema, etc.) is
+// preserved in Extras and re-emitted on marshal.
 type Tool struct {
-	Name        string          `json:"name"`
-	Description string          `json:"description,omitempty"`
-	InputSchema json.RawMessage `json:"inputSchema,omitempty"`
+	Name        string                     `json:"-"`
+	Description string                     `json:"-"`
+	InputSchema json.RawMessage            `json:"-"`
+	Extras      map[string]json.RawMessage `json:"-"`
+}
+
+// MarshalJSON emits known fields plus any extras as a flat JSON object.
+func (t Tool) MarshalJSON() ([]byte, error) {
+	m := make(map[string]json.RawMessage, 3+len(t.Extras))
+
+	for k, v := range t.Extras {
+		m[k] = v
+	}
+
+	b, err := json.Marshal(t.Name)
+	if err != nil {
+		return nil, err
+	}
+	m["name"] = b
+
+	if t.Description != "" {
+		b, err := json.Marshal(t.Description)
+		if err != nil {
+			return nil, err
+		}
+		m["description"] = b
+	}
+
+	if len(t.InputSchema) > 0 {
+		m["inputSchema"] = t.InputSchema
+	}
+
+	return json.Marshal(m)
+}
+
+// UnmarshalJSON extracts known fields and captures everything else in Extras.
+func (t *Tool) UnmarshalJSON(data []byte) error {
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(data, &m); err != nil {
+		return err
+	}
+
+	if v, ok := m["name"]; ok {
+		if err := json.Unmarshal(v, &t.Name); err != nil {
+			return err
+		}
+		delete(m, "name")
+	}
+	if v, ok := m["description"]; ok {
+		if err := json.Unmarshal(v, &t.Description); err != nil {
+			return err
+		}
+		delete(m, "description")
+	}
+	if v, ok := m["inputSchema"]; ok {
+		t.InputSchema = v
+		delete(m, "inputSchema")
+	}
+
+	if len(m) > 0 {
+		t.Extras = m
+	}
+	return nil
 }
 
 // CallToolRequest is the params for tools/call.

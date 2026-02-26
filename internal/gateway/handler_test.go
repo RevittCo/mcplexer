@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/revittco/mcplexer/internal/config"
 	"github.com/revittco/mcplexer/internal/routing"
 	"github.com/revittco/mcplexer/internal/store"
 )
@@ -54,6 +55,7 @@ func (m *mockToolLister) Call(_ context.Context, serverID, authScopeID, toolName
 type mockStore struct {
 	servers    []store.DownstreamServer
 	capUpdates map[string]json.RawMessage
+	settings   json.RawMessage
 	workspaces []mockWorkspace
 	routeRules map[string][]store.RouteRule // keyed by workspace ID
 }
@@ -207,6 +209,15 @@ func (m *mockStore) GetApprovalMetrics(_ context.Context, _, _ time.Time) (*stor
 	return nil, nil
 }
 
+// Stubs — SettingsStore.
+func (m *mockStore) GetSettings(_ context.Context) (json.RawMessage, error) {
+	if len(m.settings) > 0 {
+		return m.settings, nil
+	}
+	return json.RawMessage("{}"), nil
+}
+func (m *mockStore) UpdateSettings(_ context.Context, _ json.RawMessage) error { return nil }
+
 // Stubs — Store top-level.
 func (m *mockStore) Tx(_ context.Context, _ func(store.Store) error) error { return nil }
 func (m *mockStore) Ping(_ context.Context) error                          { return nil }
@@ -246,7 +257,7 @@ func newTestHandler(lister ToolLister, servers []store.DownstreamServer) (*handl
 		},
 	}
 	engine := routing.NewEngine(ms)
-	h := newHandler(ms, engine, lister, nil, TransportSocket, nil)
+	h := newHandler(ms, engine, lister, nil, TransportSocket, nil, nil)
 	// Bind session to the global workspace so tool filtering passes.
 	h.sessions.clientPath = "/test"
 	h.sessions.wsChain = []routing.WorkspaceAncestor{{ID: "ws-global", RootPath: "/"}}
@@ -267,6 +278,129 @@ func toolNames(result json.RawMessage) []string {
 }
 
 // --- Tests ---
+
+func TestToolExtrasRoundTrip(t *testing.T) {
+	// Downstream tool with annotations, title, outputSchema — extras must survive.
+	raw := json.RawMessage(`{
+		"name": "read_file",
+		"description": "Read a file",
+		"inputSchema": {"type":"object"},
+		"annotations": {"readOnlyHint": true, "openWorldHint": false},
+		"title": "Read File",
+		"outputSchema": {"type":"object","properties":{"content":{"type":"string"}}}
+	}`)
+
+	var tool Tool
+	if err := json.Unmarshal(raw, &tool); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if tool.Name != "read_file" {
+		t.Errorf("name = %q, want %q", tool.Name, "read_file")
+	}
+	if tool.Description != "Read a file" {
+		t.Errorf("description = %q, want %q", tool.Description, "Read a file")
+	}
+	if tool.Extras == nil {
+		t.Fatal("extras is nil, expected annotations/title/outputSchema")
+	}
+	for _, key := range []string{"annotations", "title", "outputSchema"} {
+		if _, ok := tool.Extras[key]; !ok {
+			t.Errorf("extras missing key %q", key)
+		}
+	}
+
+	// Re-marshal and verify extras appear in the output.
+	out, err := json.Marshal(tool)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	var flat map[string]json.RawMessage
+	if err := json.Unmarshal(out, &flat); err != nil {
+		t.Fatalf("unmarshal flat: %v", err)
+	}
+	for _, key := range []string{"name", "description", "inputSchema", "annotations", "title", "outputSchema"} {
+		if _, ok := flat[key]; !ok {
+			t.Errorf("marshalled output missing key %q", key)
+		}
+	}
+}
+
+func TestExtractNamespacedToolsPreservesExtras(t *testing.T) {
+	// Simulate downstream tools/list response with extras.
+	raw := json.RawMessage(`{"tools":[{
+		"name": "create_issue",
+		"description": "Create an issue",
+		"inputSchema": {"type":"object"},
+		"annotations": {"readOnlyHint": false}
+	}]}`)
+
+	tools, err := extractNamespacedTools("github", raw)
+	if err != nil {
+		t.Fatalf("extract: %v", err)
+	}
+	if len(tools) != 1 {
+		t.Fatalf("got %d tools, want 1", len(tools))
+	}
+	if tools[0].Name != "github__create_issue" {
+		t.Errorf("name = %q, want %q", tools[0].Name, "github__create_issue")
+	}
+	if tools[0].Extras == nil {
+		t.Fatal("extras nil after extractNamespacedTools")
+	}
+	if _, ok := tools[0].Extras["annotations"]; !ok {
+		t.Error("annotations not preserved through extractNamespacedTools")
+	}
+}
+
+func TestHandleToolsList_ExtrasPassthrough(t *testing.T) {
+	servers := []store.DownstreamServer{
+		{ID: "gh-server", ToolNamespace: "github", Discovery: "static"},
+	}
+	lister := &mockToolLister{
+		tools: map[string]json.RawMessage{
+			"gh-server": json.RawMessage(`{"tools":[{
+				"name": "create_issue",
+				"description": "Create issue",
+				"inputSchema": {"type":"object"},
+				"annotations": {"readOnlyHint": false},
+				"title": "Create Issue"
+			}]}`),
+		},
+	}
+
+	// Disable slim tools to avoid minification stripping extras.
+	t.Setenv("MCPLEXER_SLIM_TOOLS", "false")
+
+	h, _ := newTestHandler(lister, servers)
+	result, rpcErr := h.handleToolsList(context.Background())
+	if rpcErr != nil {
+		t.Fatalf("unexpected error: code=%d msg=%s", rpcErr.Code, rpcErr.Message)
+	}
+
+	// Parse the result and check that extras are present.
+	var parsed struct {
+		Tools []json.RawMessage `json:"tools"`
+	}
+	if err := json.Unmarshal(result, &parsed); err != nil {
+		t.Fatalf("unmarshal result: %v", err)
+	}
+	if len(parsed.Tools) != 1 {
+		t.Fatalf("got %d tools, want 1", len(parsed.Tools))
+	}
+
+	var flat map[string]json.RawMessage
+	if err := json.Unmarshal(parsed.Tools[0], &flat); err != nil {
+		t.Fatalf("unmarshal tool: %v", err)
+	}
+	if _, ok := flat["annotations"]; !ok {
+		t.Error("annotations missing from tools/list output")
+	}
+	if _, ok := flat["title"]; !ok {
+		t.Error("title missing from tools/list output")
+	}
+}
 
 func TestExtractNamespacedTools(t *testing.T) {
 	schema := json.RawMessage(`{"type":"object"}`)
@@ -557,6 +691,256 @@ func TestHandleToolsCall_InterceptsBuiltin(t *testing.T) {
 	}
 }
 
+func TestHandleToolsList_DynamicCacheNotLeaked(t *testing.T) {
+	servers := []store.DownstreamServer{
+		{
+			ID: "dyn-server", ToolNamespace: "dynns", Discovery: "dynamic",
+			CapabilitiesCache: toolsJSON(
+				Tool{Name: "hidden_tool", Description: "Should not appear"},
+				Tool{Name: "secret_tool", Description: "Also hidden"},
+			),
+		},
+	}
+	lister := &mockToolLister{
+		tools: map[string]json.RawMessage{},
+	}
+
+	h, _ := newTestHandler(lister, servers)
+	result, rpcErr := h.handleToolsList(context.Background())
+	if rpcErr != nil {
+		t.Fatalf("unexpected error: code=%d msg=%s", rpcErr.Code, rpcErr.Message)
+	}
+
+	names := toolNames(result)
+	// Should only have built-in tools, NOT the cached dynamic tools.
+	for _, name := range names {
+		if name == "dynns__hidden_tool" || name == "dynns__secret_tool" {
+			t.Errorf("dynamic cached tool %q leaked into tools/list", name)
+		}
+	}
+	want := []string{"mcpx__load_tools", "mcpx__search_tools", "mcpx__unload_tools"}
+	if len(names) != len(want) {
+		t.Fatalf("got %v, want %v", names, want)
+	}
+}
+
+func TestHandleToolsList_ExplicitlyLoadedToolsAppear(t *testing.T) {
+	servers := []store.DownstreamServer{
+		{ID: "dyn-server", ToolNamespace: "dynns", Discovery: "dynamic"},
+	}
+	lister := &mockToolLister{
+		tools: map[string]json.RawMessage{},
+	}
+
+	h, _ := newTestHandler(lister, servers)
+
+	// Simulate loading tools via load_tools.
+	h.sessions.loadTools([]Tool{
+		{Name: "dynns__loaded_tool", Description: "Explicitly loaded"},
+	})
+
+	result, rpcErr := h.handleToolsList(context.Background())
+	if rpcErr != nil {
+		t.Fatalf("unexpected error: code=%d msg=%s", rpcErr.Code, rpcErr.Message)
+	}
+
+	names := toolNames(result)
+	found := false
+	for _, name := range names {
+		if name == "dynns__loaded_tool" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("explicitly loaded tool not found in tools/list, got: %v", names)
+	}
+}
+
+func TestHandleToolsList_CodexCompatIncludesDynamicTools(t *testing.T) {
+	servers := []store.DownstreamServer{
+		{ID: "dyn-server", ToolNamespace: "dynns", Discovery: "dynamic"},
+	}
+	lister := &mockToolLister{
+		tools: map[string]json.RawMessage{
+			"dyn-server": toolsJSON(Tool{Name: "hidden_tool", Description: "Hidden"}),
+		},
+	}
+	ms := &mockStore{
+		servers: append(servers, store.DownstreamServer{
+			ID: "mcpx-builtin", Name: "MCPlexer Built-in Tools",
+			Transport: "internal", ToolNamespace: "mcpx", Discovery: "static",
+		}),
+		capUpdates: make(map[string]json.RawMessage),
+		settings:   json.RawMessage(`{"codex_dynamic_tool_compat":true}`),
+		workspaces: []mockWorkspace{{id: "ws-global", rootPath: "/"}},
+		routeRules: map[string][]store.RouteRule{
+			"ws-global": {
+				{
+					ID: "builtin-allow", WorkspaceID: "ws-global",
+					Priority: 100, PathGlob: "**", Policy: "allow",
+					ToolMatch:          json.RawMessage(`["mcpx__*"]`),
+					DownstreamServerID: "mcpx-builtin",
+				},
+				{
+					ID: "allow-all", WorkspaceID: "ws-global",
+					Priority: 1, PathGlob: "**", Policy: "allow",
+					ToolMatch: json.RawMessage(`["*"]`),
+				},
+			},
+		},
+	}
+
+	h := newHandler(
+		ms,
+		routing.NewEngine(ms),
+		lister,
+		nil,
+		TransportSocket,
+		nil,
+		config.NewSettingsService(ms),
+	)
+	h.sessions.clientPath = "/test"
+	h.sessions.wsChain = []routing.WorkspaceAncestor{{ID: "ws-global", RootPath: "/"}}
+	h.sessions.session = &store.Session{ClientType: "codex-mcp-client"}
+
+	result, rpcErr := h.handleToolsList(context.Background())
+	if rpcErr != nil {
+		t.Fatalf("unexpected error: code=%d msg=%s", rpcErr.Code, rpcErr.Message)
+	}
+
+	names := toolNames(result)
+	found := false
+	for _, name := range names {
+		if name == "dynns__hidden_tool" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected dynamic tool to be visible for Codex compat mode, got: %v", names)
+	}
+}
+
+func TestHandleToolsList_CodexCompatDisabledHidesDynamicTools(t *testing.T) {
+	servers := []store.DownstreamServer{
+		{ID: "dyn-server", ToolNamespace: "dynns", Discovery: "dynamic"},
+	}
+	lister := &mockToolLister{
+		tools: map[string]json.RawMessage{
+			"dyn-server": toolsJSON(Tool{Name: "hidden_tool", Description: "Hidden"}),
+		},
+	}
+	ms := &mockStore{
+		servers: append(servers, store.DownstreamServer{
+			ID: "mcpx-builtin", Name: "MCPlexer Built-in Tools",
+			Transport: "internal", ToolNamespace: "mcpx", Discovery: "static",
+		}),
+		capUpdates: make(map[string]json.RawMessage),
+		settings:   json.RawMessage(`{"codex_dynamic_tool_compat":false}`),
+		workspaces: []mockWorkspace{{id: "ws-global", rootPath: "/"}},
+		routeRules: map[string][]store.RouteRule{
+			"ws-global": {
+				{
+					ID: "builtin-allow", WorkspaceID: "ws-global",
+					Priority: 100, PathGlob: "**", Policy: "allow",
+					ToolMatch:          json.RawMessage(`["mcpx__*"]`),
+					DownstreamServerID: "mcpx-builtin",
+				},
+				{
+					ID: "allow-all", WorkspaceID: "ws-global",
+					Priority: 1, PathGlob: "**", Policy: "allow",
+					ToolMatch: json.RawMessage(`["*"]`),
+				},
+			},
+		},
+	}
+
+	h := newHandler(
+		ms,
+		routing.NewEngine(ms),
+		lister,
+		nil,
+		TransportSocket,
+		nil,
+		config.NewSettingsService(ms),
+	)
+	h.sessions.clientPath = "/test"
+	h.sessions.wsChain = []routing.WorkspaceAncestor{{ID: "ws-global", RootPath: "/"}}
+	h.sessions.session = &store.Session{ClientType: "codex-mcp-client"}
+
+	result, rpcErr := h.handleToolsList(context.Background())
+	if rpcErr != nil {
+		t.Fatalf("unexpected error: code=%d msg=%s", rpcErr.Code, rpcErr.Message)
+	}
+
+	names := toolNames(result)
+	for _, name := range names {
+		if name == "dynns__hidden_tool" {
+			t.Fatalf("dynamic tool should be hidden when Codex compat is disabled, got: %v", names)
+		}
+	}
+}
+
+func TestHandleToolsList_CodexCompatSkipsNonCodexClients(t *testing.T) {
+	servers := []store.DownstreamServer{
+		{ID: "dyn-server", ToolNamespace: "dynns", Discovery: "dynamic"},
+	}
+	lister := &mockToolLister{
+		tools: map[string]json.RawMessage{
+			"dyn-server": toolsJSON(Tool{Name: "hidden_tool", Description: "Hidden"}),
+		},
+	}
+	ms := &mockStore{
+		servers: append(servers, store.DownstreamServer{
+			ID: "mcpx-builtin", Name: "MCPlexer Built-in Tools",
+			Transport: "internal", ToolNamespace: "mcpx", Discovery: "static",
+		}),
+		capUpdates: make(map[string]json.RawMessage),
+		settings:   json.RawMessage(`{"codex_dynamic_tool_compat":true}`),
+		workspaces: []mockWorkspace{{id: "ws-global", rootPath: "/"}},
+		routeRules: map[string][]store.RouteRule{
+			"ws-global": {
+				{
+					ID: "builtin-allow", WorkspaceID: "ws-global",
+					Priority: 100, PathGlob: "**", Policy: "allow",
+					ToolMatch:          json.RawMessage(`["mcpx__*"]`),
+					DownstreamServerID: "mcpx-builtin",
+				},
+				{
+					ID: "allow-all", WorkspaceID: "ws-global",
+					Priority: 1, PathGlob: "**", Policy: "allow",
+					ToolMatch: json.RawMessage(`["*"]`),
+				},
+			},
+		},
+	}
+
+	h := newHandler(
+		ms,
+		routing.NewEngine(ms),
+		lister,
+		nil,
+		TransportSocket,
+		nil,
+		config.NewSettingsService(ms),
+	)
+	h.sessions.clientPath = "/test"
+	h.sessions.wsChain = []routing.WorkspaceAncestor{{ID: "ws-global", RootPath: "/"}}
+	h.sessions.session = &store.Session{ClientType: "claude-code"}
+
+	result, rpcErr := h.handleToolsList(context.Background())
+	if rpcErr != nil {
+		t.Fatalf("unexpected error: code=%d msg=%s", rpcErr.Code, rpcErr.Message)
+	}
+
+	names := toolNames(result)
+	for _, name := range names {
+		if name == "dynns__hidden_tool" {
+			t.Fatalf("dynamic tool should remain hidden for non-Codex clients, got: %v", names)
+		}
+	}
+}
+
 func TestHandleToolsCall_GitHubRepoAllowlistBlocksDisallowedRepo(t *testing.T) {
 	lister := &mockToolLister{}
 	ms := &mockStore{
@@ -577,7 +961,7 @@ func TestHandleToolsCall_GitHubRepoAllowlistBlocksDisallowedRepo(t *testing.T) {
 		},
 	}
 
-	h := newHandler(ms, routing.NewEngine(ms), lister, nil, TransportSocket, nil)
+	h := newHandler(ms, routing.NewEngine(ms), lister, nil, TransportSocket, nil, nil)
 	h.sessions.clientPath = "/test"
 	h.sessions.wsChain = []routing.WorkspaceAncestor{{ID: "ws-global", RootPath: "/"}}
 
@@ -617,7 +1001,7 @@ func TestHandleToolsCall_GitHubRepoAllowlistAllowsConfiguredRepo(t *testing.T) {
 		},
 	}
 
-	h := newHandler(ms, routing.NewEngine(ms), lister, nil, TransportSocket, nil)
+	h := newHandler(ms, routing.NewEngine(ms), lister, nil, TransportSocket, nil, nil)
 	h.sessions.clientPath = "/test"
 	h.sessions.wsChain = []routing.WorkspaceAncestor{{ID: "ws-global", RootPath: "/"}}
 
@@ -683,8 +1067,8 @@ func TestInjectCacheMeta(t *testing.T) {
 
 	// Cache hit: should include age_seconds.
 	got2 := injectCacheMeta(result, true, 45*time.Second)
-	json.Unmarshal(got2, &envelope) //nolint:errcheck
-	json.Unmarshal(envelope["_meta"], &meta) //nolint:errcheck
+	json.Unmarshal(got2, &envelope)           //nolint:errcheck
+	json.Unmarshal(envelope["_meta"], &meta)  //nolint:errcheck
 	json.Unmarshal(meta["cache"], &cacheMeta) //nolint:errcheck
 	if cacheMeta["cached"] != true {
 		t.Errorf("cached = %v, want true", cacheMeta["cached"])

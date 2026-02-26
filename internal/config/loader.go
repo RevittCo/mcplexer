@@ -25,7 +25,7 @@ type downstreamServerConfig struct {
 	Args           []string       `yaml:"args,omitempty"`
 	URL            string         `yaml:"url,omitempty"`
 	ToolNamespace  string         `yaml:"tool_namespace"`
-	Discovery      string         `yaml:"discovery,omitempty"` // "static" (default) or "dynamic"
+	Discovery      string         `yaml:"discovery,omitempty"` // "dynamic" (default) or "static"
 	IdleTimeoutSec int            `yaml:"idle_timeout_sec"`
 	MaxInstances   int            `yaml:"max_instances"`
 	RestartPolicy  string         `yaml:"restart_policy"`

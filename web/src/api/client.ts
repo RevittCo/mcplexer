@@ -10,6 +10,9 @@ import type {
   DownstreamServer,
   DryRunRequest,
   DryRunResult,
+  MCPClient,
+  MCPInstallPreview,
+  MCPInstallStatus,
   OAuthCapabilities,
   OAuthProvider,
   OAuthQuickSetupRequest,
@@ -18,6 +21,8 @@ import type {
   OAuthTemplate,
   PaginatedResponse,
   RouteRule,
+  Settings,
+  SettingsResponse,
   ToolApproval,
   Workspace,
 } from './types'
@@ -345,5 +350,34 @@ export function dryRun(params: DryRunRequest): Promise<DryRunResult> {
   return request('/dry-run', {
     method: 'POST',
     body: JSON.stringify(params),
+  })
+}
+
+// MCP Install
+export function getMCPInstallStatus(): Promise<MCPInstallStatus> {
+  return request('/mcp-install/status')
+}
+
+export function installMCP(clientId: string): Promise<MCPClient> {
+  return request(`/mcp-install/${clientId}/install`, { method: 'POST' })
+}
+
+export function uninstallMCP(clientId: string): Promise<MCPClient> {
+  return request(`/mcp-install/${clientId}/uninstall`, { method: 'POST' })
+}
+
+export function previewMCPInstall(clientId: string): Promise<MCPInstallPreview> {
+  return request(`/mcp-install/${clientId}/preview`)
+}
+
+// Settings
+export function getSettings(): Promise<SettingsResponse> {
+  return request('/settings')
+}
+
+export function updateSettings(data: Settings): Promise<SettingsResponse> {
+  return request('/settings', {
+    method: 'PUT',
+    body: JSON.stringify(data),
   })
 }

@@ -16,9 +16,16 @@ type Store interface {
 	SessionStore
 	AuditStore
 	ToolApprovalStore
+	SettingsStore
 	Tx(ctx context.Context, fn func(Store) error) error
 	Ping(ctx context.Context) error
 	Close() error
+}
+
+// SettingsStore manages the singleton settings record.
+type SettingsStore interface {
+	GetSettings(ctx context.Context) (json.RawMessage, error)
+	UpdateSettings(ctx context.Context, data json.RawMessage) error
 }
 
 // WorkspaceStore manages workspace records.

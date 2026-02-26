@@ -13,6 +13,7 @@ import (
 	"github.com/revittco/mcplexer/internal/approval"
 	"github.com/revittco/mcplexer/internal/audit"
 	"github.com/revittco/mcplexer/internal/cache"
+	"github.com/revittco/mcplexer/internal/config"
 	"github.com/revittco/mcplexer/internal/routing"
 	"github.com/revittco/mcplexer/internal/store"
 )
@@ -38,26 +39,39 @@ func NewServer(
 	transport TransportMode,
 	opts ...ServerOption,
 ) *Server {
-	var approvals *approval.Manager
+	var sopts serverOptions
 	for _, o := range opts {
-		o.apply(&approvals)
+		o.apply(&sopts)
 	}
 	return &Server{
-		handler: newHandler(s, engine, manager, auditor, transport, approvals),
+		handler: newHandler(s, engine, manager, auditor, transport, sopts.approvals, sopts.settingsSvc),
 	}
+}
+
+// serverOptions holds optional configuration applied via ServerOption.
+type serverOptions struct {
+	approvals   *approval.Manager
+	settingsSvc *config.SettingsService
 }
 
 // ServerOption configures optional server features.
 type ServerOption interface {
-	apply(approvals **approval.Manager)
+	apply(opts *serverOptions)
 }
 
 type withApprovals struct{ m *approval.Manager }
 
-func (o withApprovals) apply(approvals **approval.Manager) { *approvals = o.m }
+func (o withApprovals) apply(opts *serverOptions) { opts.approvals = o.m }
 
 // WithApprovals enables the tool call approval system.
 func WithApprovals(m *approval.Manager) ServerOption { return withApprovals{m} }
+
+type withSettings struct{ s *config.SettingsService }
+
+func (o withSettings) apply(opts *serverOptions) { opts.settingsSvc = o.s }
+
+// WithSettings provides the settings service to the gateway handler.
+func WithSettings(s *config.SettingsService) ServerOption { return withSettings{s} }
 
 // RunStdio runs the MCP server over stdio (stdin/stdout).
 func (s *Server) RunStdio(ctx context.Context) error {
@@ -160,6 +174,12 @@ func (s *Server) handleNotification(req Request) {
 // ToolsListStats returns cache statistics for the tools/list cache.
 func (s *Server) ToolsListStats() cache.Stats {
 	return s.handler.ToolsListStats()
+}
+
+// InvalidateAndNotifyToolsChanged flushes the tools/list cache and sends
+// a tools/list_changed notification to the connected client.
+func (s *Server) InvalidateAndNotifyToolsChanged() {
+	s.handler.InvalidateAndNotifyToolsChanged()
 }
 
 // Notify sends a JSON-RPC notification (no id field) to the client.

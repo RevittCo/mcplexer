@@ -111,7 +111,7 @@ func SeedDefaultWorkspaces(ctx context.Context, s store.Store) error {
 		return err
 	}
 	if len(existing) > 0 {
-		return nil
+		return ensureGlobalWorkspace(ctx, s, existing)
 	}
 
 	slog.Info("seeding default workspaces", "count", len(defaultWorkspaces))
@@ -125,5 +125,30 @@ func SeedDefaultWorkspaces(ctx context.Context, s store.Store) error {
 		}
 		slog.Info("seeded workspace", "id", w.ID, "name", w.Name)
 	}
+	return nil
+}
+
+// ensureGlobalWorkspace creates the global workspace if missing.
+func ensureGlobalWorkspace(ctx context.Context, s store.Store, existing []store.Workspace) error {
+	for _, w := range existing {
+		if w.ID == "global" {
+			return nil
+		}
+	}
+
+	now := time.Now().UTC()
+	w := store.Workspace{
+		ID:            "global",
+		Name:          "Global",
+		RootPath:      "/",
+		DefaultPolicy: "deny",
+		Source:        "default",
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}
+	if err := s.CreateWorkspace(ctx, &w); err != nil {
+		return err
+	}
+	slog.Info("migrated: seeded global workspace")
 	return nil
 }

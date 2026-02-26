@@ -60,6 +60,8 @@ type Instance struct {
 	idleTimeout time.Duration
 	idleTimer   *time.Timer
 
+	onNotify func(method string) // called when downstream sends a notification
+
 	mu    sync.Mutex
 	state InstanceState
 	cmd   *exec.Cmd
@@ -150,7 +152,7 @@ func (inst *Instance) initialize(ctx context.Context, stdin io.Writer, stdout io
 		ID:      json.RawMessage(`1`),
 		Method:  "initialize",
 		Params: json.RawMessage(`{
-			"protocolVersion": "2024-11-05",
+			"protocolVersion": "2025-03-26",
 			"capabilities": {},
 			"clientInfo": {"name": "mcplexer", "version": "0.1.0"}
 		}`),
@@ -237,21 +239,52 @@ func (inst *Instance) handleRequest(
 		return nil, fmt.Errorf("write request: %w", err)
 	}
 
-	if !scanner.Scan() {
-		return nil, fmt.Errorf("no response from downstream")
-	}
+	return inst.readResponse(scanner)
+}
 
-	var rpcResp jsonRPCResponse
-	if err := json.Unmarshal(scanner.Bytes(), &rpcResp); err != nil {
-		return nil, fmt.Errorf("unmarshal response: %w", err)
-	}
+// readResponse scans lines until finding a JSON-RPC response (has an id field).
+// Any interleaved notifications (no id) are forwarded via onNotify.
+func (inst *Instance) readResponse(scanner *bufio.Scanner) (json.RawMessage, error) {
+	for {
+		if !scanner.Scan() {
+			return nil, fmt.Errorf("no response from downstream")
+		}
 
-	if rpcResp.Error != nil {
-		return nil, fmt.Errorf("downstream error %d: %s",
-			rpcResp.Error.Code, rpcResp.Error.Message)
-	}
+		var rpcResp jsonRPCResponse
+		if err := json.Unmarshal(scanner.Bytes(), &rpcResp); err != nil {
+			return nil, fmt.Errorf("unmarshal response: %w", err)
+		}
 
-	return rpcResp.Result, nil
+		// No id means this is a notification, not a response.
+		if rpcResp.ID == nil {
+			inst.forwardNotification(scanner.Bytes())
+			continue
+		}
+
+		if rpcResp.Error != nil {
+			return nil, fmt.Errorf("downstream error %d: %s",
+				rpcResp.Error.Code, rpcResp.Error.Message)
+		}
+
+		return rpcResp.Result, nil
+	}
+}
+
+// forwardNotification extracts the method from a JSON-RPC notification
+// and calls onNotify if set.
+func (inst *Instance) forwardNotification(data []byte) {
+	if inst.onNotify == nil {
+		return
+	}
+	var notif struct {
+		Method string `json:"method"`
+	}
+	if err := json.Unmarshal(data, &notif); err != nil || notif.Method == "" {
+		return
+	}
+	slog.Debug("downstream notification",
+		"server", inst.key.ServerID, "method", notif.Method)
+	inst.onNotify(notif.Method)
 }
 
 func (inst *Instance) getState() InstanceState {

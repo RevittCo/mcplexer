@@ -1,6 +1,7 @@
 import { Link, useLocation } from 'react-router-dom'
 import {
   ChevronDown,
+  Download,
   FileText,
   GitBranch,
   Globe,
@@ -10,6 +11,7 @@ import {
   Menu,
   Play,
   Server,
+  Settings,
   ShieldCheck,
   Zap,
 } from 'lucide-react'
@@ -42,7 +44,9 @@ const advancedNav: NavItem[] = [
 ]
 
 const toolsNav: NavItem[] = [
+  { label: 'Install MCP', href: '/install', icon: <Download className="h-4 w-4" /> },
   { label: 'Dry Run', href: '/dry-run', icon: <Play className="h-4 w-4" /> },
+  { label: 'Settings', href: '/settings', icon: <Settings className="h-4 w-4" /> },
 ]
 
 function NavLink({ item, onNavigate }: { item: NavItem; onNavigate?: () => void }) {

@@ -25,7 +25,7 @@ func (d *DB) CreateDownstreamServer(ctx context.Context, ds *store.DownstreamSer
 	cacheCfg := normalizeJSON(ds.CacheConfig, "{}")
 
 	if ds.Discovery == "" {
-		ds.Discovery = "static"
+		ds.Discovery = "dynamic"
 	}
 	if ds.Source == "" {
 		ds.Source = "api"

@@ -10,6 +10,7 @@ import (
 	"github.com/revittco/mcplexer/internal/approval"
 	"github.com/revittco/mcplexer/internal/audit"
 	"github.com/revittco/mcplexer/internal/cache"
+	"github.com/revittco/mcplexer/internal/config"
 	"github.com/revittco/mcplexer/internal/routing"
 	"github.com/revittco/mcplexer/internal/store"
 )
@@ -36,6 +37,7 @@ type handler struct {
 	sessions       *sessionManager
 	auditor        *audit.Logger
 	approvals      *approval.Manager // nil = approval system disabled
+	settingsSvc    *config.SettingsService
 	toolsListCache *cache.Cache[string, json.RawMessage]
 	notifier       Notifier // set at runtime for sending notifications
 }
@@ -52,7 +54,15 @@ func newHandler(
 	a *audit.Logger,
 	t TransportMode,
 	approvals *approval.Manager,
+	settingsSvc *config.SettingsService,
 ) *handler {
+	ttl := 15 * time.Second
+	if settingsSvc != nil {
+		settings := settingsSvc.Load(context.Background())
+		if settings.ToolsCacheTTLSec > 0 {
+			ttl = time.Duration(settings.ToolsCacheTTLSec) * time.Second
+		}
+	}
 	return &handler{
 		store:          s,
 		engine:         e,
@@ -60,7 +70,8 @@ func newHandler(
 		sessions:       newSessionManager(s, t),
 		auditor:        a,
 		approvals:      approvals,
-		toolsListCache: cache.New[string, json.RawMessage](10, 15*time.Second),
+		settingsSvc:    settingsSvc,
+		toolsListCache: cache.New[string, json.RawMessage](10, ttl),
 	}
 }
 
@@ -77,7 +88,7 @@ func (h *handler) handleInitialize(
 	}
 
 	result := InitializeResult{
-		ProtocolVersion: "2024-11-05",
+		ProtocolVersion: "2025-03-26",
 		Capabilities: ServerCapability{
 			Tools: &ToolCapability{ListChanged: true},
 		},
@@ -89,6 +100,14 @@ func (h *handler) handleInitialize(
 		return nil, &RPCError{Code: CodeInternalError, Message: err.Error()}
 	}
 	return data, nil
+}
+
+// InvalidateAndNotifyToolsChanged clears the tools/list cache and sends
+// a tools/list_changed notification to the connected client. Called by
+// the downstream manager when a server emits notifications/tools/list_changed.
+func (h *handler) InvalidateAndNotifyToolsChanged() {
+	h.toolsListCache.Flush()
+	h.sendToolsListChanged()
 }
 
 func mapRouteError(err error) *RPCError {

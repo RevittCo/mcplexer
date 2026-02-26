@@ -94,6 +94,8 @@ func (m *mockRouteStore) ExpirePendingApprovals(context.Context, time.Time) (int
 func (m *mockRouteStore) GetApprovalMetrics(context.Context, time.Time, time.Time) (*store.ApprovalMetrics, error) {
 	return nil, nil
 }
+func (m *mockRouteStore) GetSettings(context.Context) (json.RawMessage, error)   { return json.RawMessage("{}"), nil }
+func (m *mockRouteStore) UpdateSettings(context.Context, json.RawMessage) error  { return nil }
 func (m *mockRouteStore) Tx(context.Context, func(store.Store) error) error { return nil }
 func (m *mockRouteStore) Ping(context.Context) error                        { return nil }
 func (m *mockRouteStore) Close() error                                      { return nil }

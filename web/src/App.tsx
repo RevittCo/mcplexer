@@ -10,8 +10,10 @@ import { RoutesPage } from '@/pages/config/RoutesPage'
 import { AuthScopesPage } from '@/pages/config/AuthScopesPage'
 import { OAuthProvidersPage } from '@/pages/config/OAuthProvidersPage'
 import { DryRunPage } from '@/pages/DryRunPage'
+import { InstallMCPPage } from '@/pages/InstallMCPPage'
 import { QuickSetupPage } from '@/pages/QuickSetupPage'
 import { ApprovalsPage } from '@/pages/ApprovalsPage'
+import { SettingsPage } from '@/pages/SettingsPage'
 
 function App() {
   return (
@@ -28,7 +30,9 @@ function App() {
           <Route path="/config/auth-scopes" element={<AuthScopesPage />} />
           <Route path="/config/oauth-providers" element={<OAuthProvidersPage />} />
           <Route path="/approvals" element={<ApprovalsPage />} />
+          <Route path="/install" element={<InstallMCPPage />} />
           <Route path="/dry-run" element={<DryRunPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
         </Routes>
       </AppLayout>
     </BrowserRouter>

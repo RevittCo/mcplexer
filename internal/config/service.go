@@ -51,6 +51,13 @@ func (s *Service) CreateDownstreamServer(ctx context.Context, d *store.Downstrea
 	if err := s.checkNamespaceUnique(ctx, d.ToolNamespace, d.ID); err != nil {
 		return err
 	}
+	if d.Discovery == "" {
+		if d.Transport == "internal" {
+			d.Discovery = "static"
+		} else {
+			d.Discovery = "dynamic"
+		}
+	}
 	now := time.Now().UTC()
 	d.CreatedAt = now
 	d.UpdatedAt = now

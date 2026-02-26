@@ -31,6 +31,11 @@ type Manager struct {
 	auth      *auth.Injector
 	mu        sync.Mutex
 	instances map[InstanceKey]downstream
+
+	// OnToolsChanged is called when a downstream server sends
+	// notifications/tools/list_changed. The gateway uses this to
+	// invalidate caches and propagate the notification upstream.
+	OnToolsChanged func()
 }
 
 // NewManager creates a new downstream process manager.
@@ -137,7 +142,9 @@ func (m *Manager) createInstance(
 	}
 	env := MergeEnv(os.Environ(), nil, authEnv)
 
-	return newInstance(key, server.Command, cmdArgs, env, timeout), nil
+	inst := newInstance(key, server.Command, cmdArgs, env, timeout)
+	inst.onNotify = m.handleDownstreamNotify
+	return inst, nil
 }
 
 // ListTools sends a tools/list request to a specific downstream instance.
@@ -219,6 +226,14 @@ func (m *Manager) resolveAuthScopes(ctx context.Context, serverIDs []string) map
 		}
 	}
 	return result
+}
+
+// handleDownstreamNotify is called when a downstream instance receives a
+// notification (e.g. notifications/tools/list_changed).
+func (m *Manager) handleDownstreamNotify(method string) {
+	if method == "notifications/tools/list_changed" && m.OnToolsChanged != nil {
+		m.OnToolsChanged()
+	}
 }
 
 // InstanceInfo describes a running downstream instance for status reporting.

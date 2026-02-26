@@ -64,26 +64,49 @@ func (h *handler) handleToolsList(
 		}
 	}
 
-	// For dynamic servers, only include tools that have been explicitly loaded
-	// into the session via load_tools (or from capabilities cache if no session
-	// tools exist yet, for backward compat during transition).
-	activeTools := h.sessions.getActiveTools()
-	if len(activeTools) > 0 {
-		tools = append(tools, activeTools...)
-	} else {
+	// Codex compatibility mode: include dynamic-discovery tools directly in
+	// tools/list to avoid relying on load_tools/list_changed orchestration.
+	if h.includeDynamicToolsForCodex(ctx) && len(dynamicServers) > 0 {
+		dynamicIDs := make([]string, 0, len(dynamicServers))
 		for _, srv := range dynamicServers {
-			if len(srv.CapabilitiesCache) == 0 || string(srv.CapabilitiesCache) == "{}" {
-				continue
+			dynamicIDs = append(dynamicIDs, srv.ID)
+		}
+
+		dynamicLiveTools, err := h.cachedListToolsForServers(ctx, dynamicIDs)
+		if err != nil {
+			return nil, &RPCError{
+				Code:    CodeInternalError,
+				Message: fmt.Sprintf("list dynamic tools: %v", err),
 			}
-			t, err := extractNamespacedTools(srv.ToolNamespace, srv.CapabilitiesCache)
+		}
+
+		for _, srv := range dynamicServers {
+			rawResult, ok := dynamicLiveTools[srv.ID]
+			if !ok {
+				if len(srv.CapabilitiesCache) > 0 && string(srv.CapabilitiesCache) != "{}" {
+					rawResult = srv.CapabilitiesCache
+				} else {
+					continue
+				}
+			} else if err := h.store.UpdateCapabilitiesCache(ctx, srv.ID, rawResult); err != nil {
+				slog.Warn("failed to update capabilities cache",
+					"server", srv.ID, "error", err)
+			}
+
+			ns := namespaces[srv.ID]
+			t, err := extractNamespacedTools(ns, rawResult)
 			if err != nil {
-				slog.Warn("failed to extract cached tools",
+				slog.Warn("failed to extract tools",
 					"server", srv.ID, "error", err)
 				continue
 			}
 			tools = append(tools, t...)
 		}
 	}
+
+	// For dynamic servers, only include tools explicitly loaded via load_tools.
+	activeTools := h.sessions.getActiveTools()
+	tools = append(tools, activeTools...)
 
 	// Include built-in tools based on server configuration.
 	if len(dynamicServers) > 0 {
@@ -100,11 +123,16 @@ func (h *handler) handleToolsList(
 		tools = append(tools, flushCacheToolDefinition())
 	}
 
+	tools = dedupeToolsByName(tools)
+
 	// Only advertise tools the current session can actually route to.
 	tools = h.filterByWorkspaceRoutes(ctx, tools)
 
+	// Apply description overrides from settings.
+	tools = h.applyDescriptionOverrides(ctx, tools)
+
 	// Minify schemas to reduce context window consumption.
-	if slimToolsEnabled() {
+	if h.slimToolsEnabled(ctx) {
 		tools = minifyToolSchemas(tools)
 	}
 
@@ -286,6 +314,57 @@ func (h *handler) handleToolsCall(
 	return result, nil
 }
 
+// slimToolsEnabled checks settings (then env var fallback) to decide
+// whether to minify tool schemas.
+func (h *handler) slimToolsEnabled(ctx context.Context) bool {
+	if h.settingsSvc != nil {
+		return h.settingsSvc.Load(ctx).SlimTools
+	}
+	return slimToolsEnabled()
+}
+
+func (h *handler) includeDynamicToolsForCodex(ctx context.Context) bool {
+	if h.settingsSvc == nil {
+		return false
+	}
+	settings := h.settingsSvc.Load(ctx)
+	if !settings.CodexDynamicToolCompat {
+		return false
+	}
+	return strings.HasPrefix(strings.ToLower(h.sessions.clientType()), "codex")
+}
+
+func dedupeToolsByName(tools []Tool) []Tool {
+	seen := make(map[string]struct{}, len(tools))
+	out := make([]Tool, 0, len(tools))
+	for _, t := range tools {
+		if _, ok := seen[t.Name]; ok {
+			continue
+		}
+		seen[t.Name] = struct{}{}
+		out = append(out, t)
+	}
+	return out
+}
+
+// applyDescriptionOverrides replaces builtin tool descriptions with
+// user-configured overrides from settings.
+func (h *handler) applyDescriptionOverrides(ctx context.Context, tools []Tool) []Tool {
+	if h.settingsSvc == nil {
+		return tools
+	}
+	overrides := h.settingsSvc.Load(ctx).ToolDescriptionOverrides
+	if len(overrides) == 0 {
+		return tools
+	}
+	for i, t := range tools {
+		if desc, ok := overrides[t.Name]; ok && desc != "" {
+			tools[i].Description = desc
+		}
+	}
+	return tools
+}
+
 // extractOriginalToolName strips the namespace prefix.
 func extractOriginalToolName(namespacedTool string) string {
 	if _, after, ok := strings.Cut(namespacedTool, "__"); ok {
@@ -293,4 +372,3 @@ func extractOriginalToolName(namespacedTool string) string {
 	}
 	return namespacedTool
 }
-

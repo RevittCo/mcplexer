@@ -19,6 +19,7 @@ import (
 	"github.com/revittco/mcplexer/internal/config"
 	"github.com/revittco/mcplexer/internal/downstream"
 	"github.com/revittco/mcplexer/internal/gateway"
+	"github.com/revittco/mcplexer/internal/mcpinstall"
 	"github.com/revittco/mcplexer/internal/oauth"
 	"github.com/revittco/mcplexer/internal/routing"
 	"github.com/revittco/mcplexer/internal/secrets"
@@ -77,16 +78,17 @@ func cmdServe(args []string) error {
 	}
 
 	cfgSvc := config.NewService(db)
+	settingsSvc := config.NewSettingsService(db)
 
 	switch cfg.Mode {
 	case "stdio":
 		logger.Info("starting in stdio mode")
-		return runStdio(ctx, cfg, db)
+		return runStdio(ctx, cfg, db, settingsSvc)
 	case "http":
 		if cfg.SocketPath != "" {
-			return runHTTPAndSocket(ctx, cfg, db, cfgSvc)
+			return runHTTPAndSocket(ctx, cfg, db, cfgSvc, settingsSvc)
 		}
-		return runHTTP(ctx, cfg, db, cfgSvc)
+		return runHTTP(ctx, cfg, db, cfgSvc, settingsSvc)
 	default:
 		return err
 	}
@@ -107,7 +109,7 @@ func applyFlags(cfg *Config, args []string) {
 	}
 }
 
-func runHTTP(ctx context.Context, cfg *Config, db *sqlite.DB, cfgSvc *config.Service) error {
+func runHTTP(ctx context.Context, cfg *Config, db *sqlite.DB, cfgSvc *config.Service, settingsSvc *config.SettingsService) error {
 	authInj, fm, enc, err := buildAuthInjector(cfg, db)
 	if err != nil {
 		return err
@@ -124,10 +126,16 @@ func runHTTP(ctx context.Context, cfg *Config, db *sqlite.DB, cfgSvc *config.Ser
 	approvalMgr.ExpireStale(ctx)
 	defer approvalMgr.Shutdown()
 
+	installMgr, err := mcpinstall.New()
+	if err != nil {
+		slog.Warn("mcp install manager unavailable", "error", err)
+	}
+
 	auditBus := audit.NewBus()
 	router := api.NewRouter(api.RouterDeps{
 		Store:           db,
 		ConfigSvc:       cfgSvc,
+		SettingsSvc:     settingsSvc,
 		Engine:          engine,
 		Manager:         manager,
 		FlowManager:     fm,
@@ -136,6 +144,7 @@ func runHTTP(ctx context.Context, cfg *Config, db *sqlite.DB, cfgSvc *config.Ser
 		ApprovalManager: approvalMgr,
 		ApprovalBus:     approvalBus,
 		ToolCache:       tc,
+		InstallManager:  installMgr,
 	})
 
 	srv := &http.Server{
@@ -166,7 +175,7 @@ func runHTTP(ctx context.Context, cfg *Config, db *sqlite.DB, cfgSvc *config.Ser
 	}
 }
 
-func runStdio(ctx context.Context, cfg *Config, db *sqlite.DB) error {
+func runStdio(ctx context.Context, cfg *Config, db *sqlite.DB, settingsSvc *config.SettingsService) error {
 	authInj, _, _, err := buildAuthInjector(cfg, db)
 	if err != nil {
 		return err
@@ -186,7 +195,11 @@ func runStdio(ctx context.Context, cfg *Config, db *sqlite.DB) error {
 
 	auditor := audit.NewLogger(db, db, nil)
 	gw := gateway.NewServer(db, engine, lister, auditor, gateway.TransportStdio,
-		gateway.WithApprovals(approvalMgr))
+		gateway.WithApprovals(approvalMgr),
+		gateway.WithSettings(settingsSvc))
+
+	manager.OnToolsChanged = gw.InvalidateAndNotifyToolsChanged
+
 	return gw.RunStdio(ctx)
 }
 
@@ -259,7 +272,7 @@ func buildAuthInjector(cfg *Config, db *sqlite.DB) (*auth.Injector, *oauth.FlowM
 
 // runHTTPAndSocket runs both the HTTP server and Unix socket listener
 // concurrently using an errgroup.
-func runHTTPAndSocket(ctx context.Context, cfg *Config, db *sqlite.DB, cfgSvc *config.Service) error {
+func runHTTPAndSocket(ctx context.Context, cfg *Config, db *sqlite.DB, cfgSvc *config.Service, settingsSvc *config.SettingsService) error {
 	authInj, fm, enc, err := buildAuthInjector(cfg, db)
 	if err != nil {
 		return err
@@ -277,6 +290,11 @@ func runHTTPAndSocket(ctx context.Context, cfg *Config, db *sqlite.DB, cfgSvc *c
 	approvalMgr.ExpireStale(ctx)
 	defer approvalMgr.Shutdown()
 
+	installMgr2, err := mcpinstall.New()
+	if err != nil {
+		slog.Warn("mcp install manager unavailable", "error", err)
+	}
+
 	auditBus := audit.NewBus()
 	auditor := audit.NewLogger(db, db, auditBus)
 	g, ctx := errgroup.WithContext(ctx)
@@ -286,6 +304,7 @@ func runHTTPAndSocket(ctx context.Context, cfg *Config, db *sqlite.DB, cfgSvc *c
 		router := api.NewRouter(api.RouterDeps{
 			Store:           db,
 			ConfigSvc:       cfgSvc,
+			SettingsSvc:     settingsSvc,
 			Engine:          engine,
 			Manager:         manager,
 			FlowManager:     fm,
@@ -294,6 +313,7 @@ func runHTTPAndSocket(ctx context.Context, cfg *Config, db *sqlite.DB, cfgSvc *c
 			ApprovalManager: approvalMgr,
 			ApprovalBus:     approvalBus,
 			ToolCache:       tc,
+			InstallManager:  installMgr2,
 		})
 		srv := &http.Server{Addr: cfg.HTTPAddr, Handler: router}
 		srv.ReadHeaderTimeout = 10 * time.Second
@@ -319,7 +339,7 @@ func runHTTPAndSocket(ctx context.Context, cfg *Config, db *sqlite.DB, cfgSvc *c
 
 	// Unix socket listener
 	g.Go(func() error {
-		return runSocket(ctx, cfg.SocketPath, db, engine, lister, auditor, approvalMgr)
+		return runSocket(ctx, cfg.SocketPath, db, engine, lister, auditor, approvalMgr, settingsSvc)
 	})
 
 	return g.Wait()

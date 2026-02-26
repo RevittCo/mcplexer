@@ -10,6 +10,7 @@ import (
 	"github.com/revittco/mcplexer/internal/cache"
 	"github.com/revittco/mcplexer/internal/config"
 	"github.com/revittco/mcplexer/internal/downstream"
+	"github.com/revittco/mcplexer/internal/mcpinstall"
 	"github.com/revittco/mcplexer/internal/oauth"
 	"github.com/revittco/mcplexer/internal/routing"
 	"github.com/revittco/mcplexer/internal/secrets"
@@ -21,6 +22,7 @@ import (
 type RouterDeps struct {
 	Store           store.Store
 	ConfigSvc       *config.Service
+	SettingsSvc     *config.SettingsService // optional; enables settings API
 	Engine          *routing.Engine
 	Manager         *downstream.Manager   // optional; enables tool discovery
 	FlowManager     *oauth.FlowManager    // optional; enables OAuth flows
@@ -29,6 +31,7 @@ type RouterDeps struct {
 	ApprovalManager *approval.Manager     // optional; enables approval system
 	ApprovalBus     *approval.Bus         // optional; enables approval SSE stream
 	ToolCache       *cache.ToolCache      // optional; enables cache stats/flush API
+	InstallManager  *mcpinstall.Manager   // optional; enables MCP install endpoints
 }
 
 // NewRouter creates an http.Handler with all API routes and SPA fallback.
@@ -110,6 +113,20 @@ func NewRouter(deps RouterDeps) http.Handler {
 		flowManager:     deps.FlowManager,
 	}
 	mux.HandleFunc("POST /api/v1/dry-run", dr.run)
+
+	if deps.InstallManager != nil {
+		ih := &installHandler{manager: deps.InstallManager}
+		mux.HandleFunc("GET /api/v1/mcp-install/status", ih.status)
+		mux.HandleFunc("POST /api/v1/mcp-install/{clientId}/install", ih.install)
+		mux.HandleFunc("POST /api/v1/mcp-install/{clientId}/uninstall", ih.uninstall)
+		mux.HandleFunc("GET /api/v1/mcp-install/{clientId}/preview", ih.preview)
+	}
+
+	if deps.SettingsSvc != nil {
+		sh := &settingsHandler{svc: deps.SettingsSvc}
+		mux.HandleFunc("GET /api/v1/settings", sh.get)
+		mux.HandleFunc("PUT /api/v1/settings", sh.update)
+	}
 
 	disc := &discoverHandler{manager: deps.Manager, store: deps.Store}
 	mux.HandleFunc("POST /api/v1/downstreams/{id}/discover", disc.discover)

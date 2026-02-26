@@ -351,7 +351,39 @@ export interface ApprovalEvent {
   approval: ToolApproval
 }
 
+export interface MCPClient {
+  id: string
+  name: string
+  config_path: string
+  detected: boolean
+  configured: boolean
+}
+
+export interface MCPInstallStatus {
+  clients: MCPClient[]
+  binary_path: string
+  server_entry: Record<string, unknown>
+}
+
+export interface MCPInstallPreview {
+  config_path: string
+  content: string
+}
+
 export interface ApiError {
   error: string
   code?: string
+}
+
+export interface Settings {
+  slim_tools: boolean
+  tools_cache_ttl_sec: number
+  log_level: string
+  codex_dynamic_tool_compat: boolean
+  tool_description_overrides: Record<string, string>
+}
+
+export interface SettingsResponse {
+  settings: Settings
+  builtin_tool_defaults: Record<string, string>
 }

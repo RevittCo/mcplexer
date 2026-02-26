@@ -79,7 +79,7 @@ func (h *HTTPInstance) start(ctx context.Context) error {
 		ID:      json.RawMessage(`1`),
 		Method:  "initialize",
 		Params: json.RawMessage(`{
-			"protocolVersion": "2024-11-05",
+			"protocolVersion": "2025-03-26",
 			"capabilities": {},
 			"clientInfo": {"name": "mcplexer", "version": "0.1.0"}
 		}`),
