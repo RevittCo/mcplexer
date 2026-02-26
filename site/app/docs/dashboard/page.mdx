@@ -99,6 +99,53 @@ The **Dry Run** page lets you simulate route resolution without executing a tool
 
 This is invaluable for debugging "no matching route" issues.
 
+## Install MCP
+
+The **Install MCP** page lets you manage MCPlexer's installation in your MCP client applications. It detects installed clients on your machine and shows their configuration status.
+
+Supported clients:
+
+- **Claude Desktop** — Claude's desktop application
+- **Claude Code** — Claude's CLI tool
+- **Cursor** — AI-powered code editor
+- **Windsurf** — Codeium's AI editor
+- **Codex** — OpenAI's CLI agent
+- **OpenCode** — open-source AI coding tool
+- **Gemini CLI** — Google's Gemini CLI
+
+For each detected client, you can:
+
+- **Preview** — see what the config file will look like before writing
+- **Install** — write the MCPlexer server entry to the client's config
+- **Uninstall** — remove the MCPlexer entry
+
+For unsupported clients, a copyable JSON snippet is provided.
+
+## Settings
+
+The **Settings** page controls runtime behavior of the MCPlexer gateway.
+
+### Tool Display
+
+- **Slim Tools** — minify tool schemas by stripping property descriptions to reduce AI context window consumption (default: on)
+- **Codex Dynamic Tool Compat** — automatically include dynamic-discovery tools in `tools/list` for Codex sessions, since Codex doesn't support the `load_tools` pattern (default: on)
+
+### Caching
+
+- **Tools List Cache TTL** — how long the aggregated `tools/list` response is cached before re-querying downstream servers (0–300 seconds, default: 15)
+
+### Logging
+
+- **Log Level** — runtime log verbosity: debug, info, warn, error
+
+### Built-in Tool Description Overrides
+
+Customize the descriptions for MCPlexer's built-in tools (`mcpx__search_tools`, `mcpx__load_tools`, etc.). Useful for tailoring the description to work better with specific AI models. Clear a field to reset to the default.
+
+<Callout type="info" title="Environment variable overrides">
+  Settings can also be overridden via environment variables: `MCPLEXER_SLIM_TOOLS`, `MCPLEXER_LOG_LEVEL`, and `MCPLEXER_CODEX_DYNAMIC_TOOL_COMPAT`. Env vars take precedence over database values.
+</Callout>
+
 ## Quick Setup
 
 The **Quick Setup** wizard walks you through configuring OAuth for a downstream server. It handles OAuth provider creation, auth scope configuration, and the authorization flow in a single guided process.

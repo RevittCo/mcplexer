@@ -17,7 +17,7 @@ A **downstream server** is an MCP-compliant tool provider that MCPlexer manages.
   { name: "args", type: "string[]", description: "Command-line arguments passed to the process" },
   { name: "url", type: "string", description: "Server URL (http transport only)" },
   { name: "tool_namespace", type: "string", description: "Prefix for all tools from this server, e.g. \"github\"" },
-  { name: "discovery", type: "\"static\" | \"dynamic\"", default: "\"static\"", description: "How tools are discovered — cached on startup or queried on demand" },
+  { name: "discovery", type: "\"static\" | \"dynamic\"", default: "\"dynamic\"", description: "How tools are discovered — cached on startup (static) or queried at runtime (dynamic)" },
   { name: "capabilities_cache", type: "object", description: "Cached tools/list response (populated automatically for static discovery)" },
   { name: "cache_config", type: "object", description: "Tool response caching configuration" },
   { name: "idle_timeout_sec", type: "integer", default: "300", description: "Seconds of inactivity before the process is stopped" },
@@ -78,15 +78,28 @@ When a tool call arrives, MCPlexer splits on `__` to determine which downstream 
 
 With `discovery: "static"`, MCPlexer calls `tools/list` once when the server first starts and caches the result in `capabilities_cache`. Subsequent client requests for tool listings are served from the cache.
 
-This is the default and recommended mode. It's faster and avoids repeated round-trips to the downstream server.
+Use static discovery for servers whose tools never change at runtime.
 
-### Dynamic Discovery
+### Dynamic Discovery (Default)
 
-With `discovery: "dynamic"`, MCPlexer queries the downstream server's `tools/list` on every client request. Use this when the server's available tools change at runtime.
+With `discovery: "dynamic"` (the default for all non-internal servers), tools are not included in the aggregated `tools/list` response. Instead, clients discover tools through the built-in `mcpx__search_tools` and `mcpx__load_tools` tools. This keeps the initial tool listing small and avoids flooding the AI context window.
 
-<Callout type="info">
-Dynamic discovery adds latency to every tools/list request. Only use it when tool availability genuinely varies.
+<Callout type="info" title="Codex compatibility">
+Codex clients don't support the load_tools pattern. Enable **Codex dynamic tool compatibility** in Settings to auto-include dynamic tools in tools/list for Codex sessions.
 </Callout>
+
+### Downstream Notification Forwarding
+
+When a downstream server sends a `notifications/tools/list_changed` notification (e.g., because its available tools changed), MCPlexer automatically:
+
+1. Invalidates the tools/list cache
+2. Forwards the notification to the connected AI client
+
+This ensures clients always see up-to-date tool listings without manual cache flushing.
+
+### Tool Extras Passthrough
+
+MCPlexer preserves all MCP tool metadata through the gateway pipeline, including `annotations`, `title`, and `outputSchema`. These fields are forwarded verbatim to the AI client alongside the standard `name`, `description`, and `inputSchema` fields.
 
 ## Process Lifecycle
 
@@ -145,7 +158,6 @@ downstream_servers:
     command: "npx"
     args: ["-y", "@modelcontextprotocol/server-github"]
     tool_namespace: "github"
-    discovery: static
     idle_timeout_sec: 300
     max_instances: 2
     restart_policy: on-failure
@@ -162,7 +174,6 @@ downstream_servers:
     transport: http
     url: "https://analytics.example.com/mcp"
     tool_namespace: "analytics"
-    discovery: dynamic
 ```
 
 <PrevNextNav />

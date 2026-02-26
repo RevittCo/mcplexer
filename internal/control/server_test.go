@@ -15,7 +15,7 @@ func TestServerInitialize(t *testing.T) {
 	var in, out bytes.Buffer
 
 	writeReq(&in, 1, "initialize", map[string]any{
-		"protocolVersion": "2024-11-05",
+		"protocolVersion": "2025-03-26",
 		"capabilities":    map[string]any{},
 		"clientInfo":      map[string]any{"name": "test", "version": "1.0"},
 	})
@@ -41,7 +41,7 @@ func TestServerInitialize(t *testing.T) {
 	if result.ServerInfo.Name != "mcplexer-control" {
 		t.Fatalf("server name = %q", result.ServerInfo.Name)
 	}
-	if result.ProtocolVersion != "2024-11-05" {
+	if result.ProtocolVersion != "2025-03-26" {
 		t.Fatalf("protocol version = %q", result.ProtocolVersion)
 	}
 }

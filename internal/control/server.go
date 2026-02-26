@@ -121,7 +121,7 @@ func (s *Server) handleNotification(req gateway.Request) {
 
 func (s *Server) handleInitialize() (json.RawMessage, *gateway.RPCError) {
 	result := gateway.InitializeResult{
-		ProtocolVersion: "2024-11-05",
+		ProtocolVersion: "2025-03-26",
 		Capabilities: gateway.ServerCapability{
 			Tools: &gateway.ToolCapability{ListChanged: false},
 		},

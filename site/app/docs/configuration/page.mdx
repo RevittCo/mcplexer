@@ -31,6 +31,8 @@ From the UI you can:
 - **Credentials** — manage auth scopes and OAuth tokens
 - **OAuth Providers** — configure OAuth apps from built-in templates
 - **Dry Run** — test route resolution before going live
+- **Install MCP** — one-click install/uninstall of MCPlexer into client apps (Claude Desktop, Cursor, Codex, etc.)
+- **Settings** — configure slim tools, cache TTL, log level, Codex compatibility, and built-in tool description overrides
 - **Dashboard** — monitor active sessions, server health, and request metrics
 
 <Callout type="tip" title="UI validates as you go">
@@ -126,6 +128,8 @@ When MCPlexer starts, it syncs the YAML file to the database:
   { name: "MCPLEXER_SOCKET_PATH", type: "string", description: "Unix socket path for daemon/socket mode." },
   { name: "MCPLEXER_EXTERNAL_URL", type: "string", description: "External URL for OAuth callback redirects." },
   { name: "MCPLEXER_LOG_LEVEL", type: "string", default: "info", description: "Log level: debug, info, warn, error." },
+  { name: "MCPLEXER_SLIM_TOOLS", type: "bool", default: "true", description: "Minify tool schemas to reduce AI context window consumption." },
+  { name: "MCPLEXER_CODEX_DYNAMIC_TOOL_COMPAT", type: "bool", default: "true", description: "Auto-include dynamic-discovery tools in tools/list for Codex client sessions." },
   { name: "MCPLEXER_CONTROL_READONLY", type: "bool", default: "true", description: "Read-only mode for the control server." },
 ]} />
 

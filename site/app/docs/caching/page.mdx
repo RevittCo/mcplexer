@@ -167,7 +167,11 @@ In addition to tool call caching, MCPlexer caches route resolution results. When
 The route resolution cache is automatically invalidated when route rules are created, updated, or deleted.
 
 <Callout type="info" title="Tools/list cache">
-  MCPlexer also caches the aggregated tools list (the response to `tools/list` requests) with a **15-second TTL**. This prevents repeated tool discovery calls from hitting all downstream servers on every request.
+  MCPlexer caches the aggregated tools list (the response to `tools/list` requests) with a configurable TTL (default: **15 seconds**). Adjust this in **Settings > Tools List Cache TTL** or via the `tools_cache_ttl_sec` setting. This prevents repeated tool discovery calls from hitting all downstream servers on every request.
 </Callout>
+
+## Automatic Cache Invalidation via Notifications
+
+When a downstream MCP server sends a `notifications/tools/list_changed` notification, MCPlexer automatically flushes the tools/list cache and forwards the notification to the connected AI client. This ensures tool listings stay fresh without manual intervention or waiting for TTL expiry.
 
 <PrevNextNav />

@@ -176,4 +176,28 @@ MCPlexer exposes a REST API for managing configuration and querying runtime stat
   Body: `{"layer": "tool_call|route|all", "server_id": "optional-server-id"}`
 </ApiEndpoint>
 
+---
+
+## Settings
+
+<ApiEndpoint method="GET" path="/api/v1/settings" description="Get current settings. Returns the active settings (merged from defaults, database, and environment variable overrides) plus the default descriptions for all built-in tools." />
+
+<ApiEndpoint method="PUT" path="/api/v1/settings" description="Update settings. Validates and persists to the database. Environment variable overrides still take precedence on read.">
+  Body: `{"slim_tools": true, "tools_cache_ttl_sec": 15, "log_level": "info", "codex_dynamic_tool_compat": true, "tool_description_overrides": {}}`
+</ApiEndpoint>
+
+---
+
+## MCP Install
+
+Manage MCPlexer's installation in MCP client applications (Claude Desktop, Cursor, Codex, etc.).
+
+<ApiEndpoint method="GET" path="/api/v1/mcp-install/status" description="List all known MCP clients with detection status (installed on this machine), configuration status (MCPlexer entry present), binary path, and the server entry JSON." />
+
+<ApiEndpoint method="POST" path="/api/v1/mcp-install/{clientId}/install" description="Write the MCPlexer server entry into a client's MCP config file. The client must be detected on this machine." />
+
+<ApiEndpoint method="POST" path="/api/v1/mcp-install/{clientId}/uninstall" description="Remove the MCPlexer server entry from a client's MCP config file." />
+
+<ApiEndpoint method="GET" path="/api/v1/mcp-install/{clientId}/preview" description="Preview what the client's config file would look like after installing MCPlexer, without writing any changes." />
+
 <PrevNextNav />

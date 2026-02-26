@@ -58,7 +58,7 @@ A directory-scoped security context. Defined by a root path (e.g., `/home/user/p
 
 ### Downstream Server
 
-An MCP server that MCPlexer manages. Can be stdio-based (MCPlexer spawns and manages the process) or HTTP-based (MCPlexer connects to an existing endpoint). Each server has a unique namespace.
+An MCP server that MCPlexer manages. Can be stdio-based (MCPlexer spawns and manages the process) or HTTP-based (MCPlexer connects to an existing endpoint). Each server has a unique namespace. By default, tools use **dynamic discovery** — they're loaded on demand via `mcpx__search_tools` and `mcpx__load_tools` rather than appearing in the initial `tools/list` response.
 
 ### Namespace
 

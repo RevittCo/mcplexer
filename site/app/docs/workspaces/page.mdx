@@ -37,9 +37,9 @@ For production workspaces, set `default_policy: "deny"` and explicitly allow onl
 
 ## Global Workspace
 
-The **global workspace** has an empty `root_path` (`""`). It acts as the ultimate fallback — if no other workspace matches the client's working directory, the global workspace applies.
+The **global workspace** has `root_path: "/"`. It acts as the ultimate fallback — if no other workspace matches the client's working directory, the global workspace applies.
 
-Every MCPlexer instance has a global workspace. It's created automatically on first run if not defined in your config.
+Every MCPlexer instance has a global workspace. It's created automatically on first startup. If you already have custom workspaces but are missing the global one (e.g., from an older install), MCPlexer automatically creates it on the next startup.
 
 ## Ancestor Fallback Chain
 
@@ -52,7 +52,7 @@ Given these workspaces:
 ```yaml
 workspaces:
   - name: "Global"
-    root_path: ""
+    root_path: "/"
     default_policy: deny
 
   - name: "Projects"
