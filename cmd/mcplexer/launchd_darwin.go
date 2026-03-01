@@ -32,17 +32,12 @@ func installLaunchd(exePath, addr, socketPath string) error {
 	}
 
 	// Copy binary to stable location
-	binDir := filepath.Join(home, ".mcplexer", "bin")
-	if err := os.MkdirAll(binDir, 0755); err != nil {
-		return fmt.Errorf("create bin dir: %w", err)
+	if err := installBinary(exePath); err != nil {
+		return fmt.Errorf("install binary: %w", err)
 	}
-	stablePath := filepath.Join(binDir, "mcplexer")
-	src, err := os.ReadFile(exePath)
+	stablePath, err := stableBinPath()
 	if err != nil {
-		return fmt.Errorf("read binary: %w", err)
-	}
-	if err := os.WriteFile(stablePath, src, 0755); err != nil {
-		return fmt.Errorf("write binary: %w", err)
+		return fmt.Errorf("resolve stable path: %w", err)
 	}
 
 	// Write plist

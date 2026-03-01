@@ -27,7 +27,7 @@ type ClientInfo struct {
 	Name       string   `json:"name"`
 	ConfigPath string   `json:"config_path"`
 	Detected   bool     `json:"detected"`   // parent dir exists
-	Configured bool     `json:"configured"` // "mx" key present
+	Configured bool     `json:"configured"` // "mcplexer" key present (or legacy "mx")
 }
 
 // StatusResult is the response for the status endpoint.
@@ -58,6 +58,11 @@ var knownClients = []clientDef{
 	{OpenCode, "OpenCode", openCodePath},
 	{GeminiCLI, "Gemini CLI", geminiPath},
 }
+
+const (
+	serverName       = "mcplexer"
+	legacyServerName = "mx"
+)
 
 // Manager handles MCP client installation and detection.
 type Manager struct {
@@ -201,7 +206,10 @@ func (m *Manager) hasConfigured(path string) bool {
 	if !ok {
 		return false
 	}
-	_, exists := servers["mx"]
+	if _, exists := servers[serverName]; exists {
+		return true
+	}
+	_, exists := servers[legacyServerName]
 	return exists
 }
 
@@ -216,7 +224,7 @@ func (m *Manager) serverEntry() map[string]any {
 func (m *Manager) ServerEntryJSON() string {
 	entry := map[string]any{
 		"mcpServers": map[string]any{
-			"mx": m.serverEntry(),
+			serverName: m.serverEntry(),
 		},
 	}
 	out, _ := json.MarshalIndent(entry, "", "  ")
@@ -233,7 +241,8 @@ func (m *Manager) mergeMCPConfig(path string) error {
 	if !ok {
 		servers = make(map[string]any)
 	}
-	servers["mx"] = m.serverEntry()
+	servers[serverName] = m.serverEntry()
+	delete(servers, legacyServerName)
 	cfg["mcpServers"] = servers
 
 	return m.writeConfig(path, cfg)
@@ -253,7 +262,8 @@ func (m *Manager) removeMCPConfig(path string) error {
 	if !ok {
 		return nil
 	}
-	delete(servers, "mx")
+	delete(servers, serverName)
+	delete(servers, legacyServerName)
 	cfg["mcpServers"] = servers
 
 	return m.writeConfig(path, cfg)
@@ -269,7 +279,8 @@ func (m *Manager) previewMerge(path string) (string, error) {
 	if !ok {
 		servers = make(map[string]any)
 	}
-	servers["mx"] = m.serverEntry()
+	servers[serverName] = m.serverEntry()
+	delete(servers, legacyServerName)
 	cfg["mcpServers"] = servers
 
 	out, err := json.MarshalIndent(cfg, "", "  ")

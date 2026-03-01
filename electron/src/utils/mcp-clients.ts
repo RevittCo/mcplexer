@@ -1,7 +1,7 @@
 import path from "node:path";
 import fs from "node:fs";
 import os from "node:os";
-import { getGoBinaryPath } from "./go-binary.js";
+import { getStableBinaryPath } from "./go-binary.js";
 
 interface MCPClient {
   name: string;
@@ -49,6 +49,9 @@ const knownClients: MCPClient[] = [
   },
 ];
 
+const SERVER_NAME = "mcplexer";
+const LEGACY_SERVER_NAME = "mx";
+
 function clientInstalled(client: MCPClient): boolean {
   const p = client.configPath();
   if (!p) return false;
@@ -65,7 +68,7 @@ function isConfigured(configPath: string): boolean {
     const data = fs.readFileSync(configPath, "utf-8");
     const cfg = JSON.parse(data) as Record<string, unknown>;
     const servers = cfg.mcpServers as Record<string, unknown> | undefined;
-    return servers !== undefined && "mx" in servers;
+    return servers !== undefined && (SERVER_NAME in servers || LEGACY_SERVER_NAME in servers);
   } catch {
     return false;
   }
@@ -81,10 +84,11 @@ function writeConfig(configPath: string): void {
   }
 
   const servers = (cfg.mcpServers as Record<string, unknown>) ?? {};
-  servers.mx = {
-    command: getGoBinaryPath(),
+  servers[SERVER_NAME] = {
+    command: getStableBinaryPath(),
     args: ["connect", `--socket=${path.join(os.tmpdir(), "mcplexer.sock")}`],
   };
+  delete servers[LEGACY_SERVER_NAME];
   cfg.mcpServers = servers;
 
   fs.mkdirSync(path.dirname(configPath), { recursive: true });

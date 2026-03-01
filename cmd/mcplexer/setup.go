@@ -29,7 +29,16 @@ func cmdSetup() error {
 		fmt.Printf("MCPlexer daemon already running (PID %d)\n", pid)
 	}
 
-	// 2. Detect installed MCP clients
+	// 2. Install binary to stable path before configuring MCP clients
+	exe, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("resolve executable: %w", err)
+	}
+	if err := installBinary(exe); err != nil {
+		return fmt.Errorf("install binary: %w", err)
+	}
+
+	// 3. Detect installed MCP clients (now finds stable binary)
 	mgr, err := mcpinstall.New()
 	if err != nil {
 		return fmt.Errorf("init install manager: %w", err)
@@ -75,7 +84,7 @@ func cmdSetup() error {
 		}
 	}
 
-	// 3. Offer launchd installation (macOS only)
+	// 4. Offer launchd installation (macOS only)
 	if runtime.GOOS == "darwin" && !launchdInstalled() {
 		fmt.Print("\nInstall as launchd service (survives reboots)? [Y/n] ")
 		answer, _ := reader.ReadString('\n')
@@ -83,10 +92,6 @@ func cmdSetup() error {
 		if answer == "" || answer == "y" || answer == "yes" {
 			daemonStop() //nolint:errcheck
 
-			exe, err := os.Executable()
-			if err != nil {
-				return fmt.Errorf("resolve executable: %w", err)
-			}
 			if err := installLaunchd(exe, "127.0.0.1:3333", "/tmp/mcplexer.sock"); err != nil {
 				return fmt.Errorf("install launchd: %w", err)
 			}
@@ -94,7 +99,7 @@ func cmdSetup() error {
 		}
 	}
 
-	// 4. Open browser (best effort)
+	// 5. Open browser (best effort)
 	fmt.Println("\nSetup complete. Open http://localhost:3333 to manage MCPlexer.")
 	openBrowser("http://localhost:3333")
 	return nil
