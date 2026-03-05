@@ -94,11 +94,18 @@ func (d *DB) ListActiveSessions(ctx context.Context) ([]store.Session, error) {
 }
 
 func (d *DB) CleanupStaleSessions(ctx context.Context, before time.Time) (int, error) {
+	now := time.Now().UTC()
 	res, err := d.q.ExecContext(ctx, `
 		UPDATE sessions
 		SET disconnected_at = ?
-		WHERE disconnected_at IS NULL AND connected_at < ?`,
-		formatTime(time.Now().UTC()), formatTime(before),
+		WHERE disconnected_at IS NULL
+		  AND connected_at < ?
+		  AND NOT EXISTS (
+		    SELECT 1 FROM audit_records
+		    WHERE audit_records.session_id = sessions.id
+		      AND audit_records.timestamp > ?
+		  )`,
+		formatTime(now), formatTime(before), formatTime(before),
 	)
 	if err != nil {
 		return 0, err
