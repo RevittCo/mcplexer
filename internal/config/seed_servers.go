@@ -221,6 +221,33 @@ var defaultDownstreamServers = []store.DownstreamServer{
 		Disabled:       true,
 		Source:         "default",
 	},
+	{
+		ID:             aikidoServerID,
+		Name:           "Aikido",
+		Transport:      "stdio",
+		Command:        "aikido-mcp",
+		ToolNamespace:  "aikido",
+		Discovery:      "dynamic",
+		IdleTimeoutSec: 300,
+		MaxInstances:   1,
+		RestartPolicy:  "on-failure",
+		Disabled:       true,
+		Source:         "default",
+	},
+	{
+		ID:             "portainer",
+		Name:           "Portainer",
+		Transport:      "stdio",
+		Command:        "portainer-mcp",
+		Args:           json.RawMessage(`["-server", "localhost:9443", "-token", "YOUR_TOKEN"]`),
+		ToolNamespace:  "portainer",
+		Discovery:      "dynamic",
+		IdleTimeoutSec: 300,
+		MaxInstances:   1,
+		RestartPolicy:  "on-failure",
+		Disabled:       true,
+		Source:         "default",
+	},
 
 	// ── Database servers ──
 	{
@@ -319,7 +346,7 @@ var defaultDownstreamServers = []store.DownstreamServer{
 }
 
 // SeedDefaultDownstreamServers creates downstream server records if none exist.
-// For existing databases, ensures the mcpx-builtin virtual server exists.
+// For existing databases, ensures required default servers exist.
 func SeedDefaultDownstreamServers(ctx context.Context, s store.Store) error {
 	existing, err := s.ListDownstreamServers(ctx)
 	if err != nil {
@@ -327,7 +354,7 @@ func SeedDefaultDownstreamServers(ctx context.Context, s store.Store) error {
 	}
 
 	if len(existing) > 0 {
-		return ensureBuiltinServer(ctx, s, existing)
+		return ensureRequiredDefaultServers(ctx, s, existing)
 	}
 
 	slog.Info("seeding default downstream servers",
@@ -346,28 +373,44 @@ func SeedDefaultDownstreamServers(ctx context.Context, s store.Store) error {
 	return nil
 }
 
-// ensureBuiltinServer creates the mcpx-builtin virtual server if missing.
-func ensureBuiltinServer(ctx context.Context, s store.Store, existing []store.DownstreamServer) error {
+// ensureRequiredDefaultServers creates critical default servers if missing.
+func ensureRequiredDefaultServers(ctx context.Context, s store.Store, existing []store.DownstreamServer) error {
+	requiredIDs := []string{
+		"mcpx-builtin",
+		aikidoServerID,
+	}
+
+	existingByID := make(map[string]struct{}, len(existing))
 	for _, srv := range existing {
-		if srv.ID == "mcpx-builtin" {
-			return nil
-		}
+		existingByID[srv.ID] = struct{}{}
 	}
 
 	now := time.Now().UTC()
-	d := store.DownstreamServer{
-		ID:            "mcpx-builtin",
-		Name:          "MCPlexer Built-in Tools",
-		Transport:     "internal",
-		ToolNamespace: "mcpx",
-		Discovery:     "static",
-		Source:        "default",
-		CreatedAt:     now,
-		UpdatedAt:     now,
+	for _, id := range requiredIDs {
+		if _, ok := existingByID[id]; ok {
+			continue
+		}
+
+		seed, ok := defaultDownstreamServerByID(id)
+		if !ok {
+			continue
+		}
+		seed.CreatedAt = now
+		seed.UpdatedAt = now
+
+		if err := s.CreateDownstreamServer(ctx, &seed); err != nil {
+			return err
+		}
+		slog.Info("migrated: seeded default downstream server", "id", seed.ID, "name", seed.Name)
 	}
-	if err := s.CreateDownstreamServer(ctx, &d); err != nil {
-		return err
-	}
-	slog.Info("migrated: seeded mcpx-builtin virtual server")
 	return nil
+}
+
+func defaultDownstreamServerByID(id string) (store.DownstreamServer, bool) {
+	for _, srv := range defaultDownstreamServers {
+		if srv.ID == id {
+			return srv, true
+		}
+	}
+	return store.DownstreamServer{}, false
 }

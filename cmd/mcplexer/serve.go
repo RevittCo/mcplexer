@@ -59,6 +59,9 @@ func cmdServe(args []string) error {
 	if err := config.SeedDefaultDownstreamServers(ctx, db); err != nil {
 		return err
 	}
+	if err := config.SeedDefaultAuthScopes(ctx, db); err != nil {
+		return err
+	}
 	if err := config.SeedDefaultRouteRules(ctx, db); err != nil {
 		return err
 	}

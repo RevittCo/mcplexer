@@ -25,6 +25,32 @@ var defaultRouteRules = []store.RouteRule{
 		Source:             "default",
 	},
 	{
+		ID:                 aikidoMutateRouteID,
+		Name:               "Require approval for Aikido mutating tools",
+		Priority:           60,
+		WorkspaceID:        "global",
+		PathGlob:           "**",
+		ToolMatch:          json.RawMessage(`["aikido__mutate_*"]`),
+		DownstreamServerID: aikidoServerID,
+		AuthScopeID:        aikidoAuthScopeID,
+		Policy:             "allow",
+		RequiresApproval:   true,
+		ApprovalTimeout:    300,
+		Source:             "default",
+	},
+	{
+		ID:                 aikidoReadRouteID,
+		Name:               "Allow Aikido read tools",
+		Priority:           50,
+		WorkspaceID:        "global",
+		PathGlob:           "**",
+		ToolMatch:          json.RawMessage(`["aikido__read_*"]`),
+		DownstreamServerID: aikidoServerID,
+		AuthScopeID:        aikidoAuthScopeID,
+		Policy:             "allow",
+		Source:             "default",
+	},
+	{
 		ID:        "global-deny",
 		Priority:  0,
 		PathGlob:  "**",
@@ -48,7 +74,7 @@ var defaultWorkspaces = []store.Workspace{
 
 // SeedDefaultRouteRules creates route rules if none exist.
 // Seeds a builtin-allow at high priority and global deny-all at lowest priority.
-// For existing databases, ensures the builtin-allow rule exists.
+// For existing databases, ensures required default rules exist.
 func SeedDefaultRouteRules(ctx context.Context, s store.Store) error {
 	existing, err := s.ListRouteRules(ctx, "")
 	if err != nil {
@@ -56,7 +82,7 @@ func SeedDefaultRouteRules(ctx context.Context, s store.Store) error {
 	}
 
 	if len(existing) > 0 {
-		return ensureBuiltinAllowRoute(ctx, s, existing)
+		return ensureRequiredDefaultRouteRules(ctx, s, existing)
 	}
 
 	slog.Info("seeding default route rules", "count", len(defaultRouteRules))
@@ -75,33 +101,67 @@ func SeedDefaultRouteRules(ctx context.Context, s store.Store) error {
 	return nil
 }
 
-// ensureBuiltinAllowRoute creates the builtin-allow route rule if missing.
-func ensureBuiltinAllowRoute(ctx context.Context, s store.Store, existing []store.RouteRule) error {
+// ensureRequiredDefaultRouteRules creates critical default route rules if missing.
+func ensureRequiredDefaultRouteRules(ctx context.Context, s store.Store, existing []store.RouteRule) error {
+	requiredIDs := []string{
+		"builtin-allow",
+		aikidoMutateRouteID,
+		aikidoReadRouteID,
+	}
+
+	existingByID := make(map[string]struct{}, len(existing))
 	for _, r := range existing {
-		if r.ID == "builtin-allow" {
-			return nil
-		}
+		existingByID[r.ID] = struct{}{}
 	}
 
 	now := time.Now().UTC()
-	r := store.RouteRule{
-		ID:                 "builtin-allow",
-		Name:               "Allow MCPlexer built-in tools",
-		Priority:           100,
-		WorkspaceID:        "global",
-		PathGlob:           "**",
-		ToolMatch:          json.RawMessage(`["mcpx__*"]`),
-		DownstreamServerID: "mcpx-builtin",
-		Policy:             "allow",
-		Source:             "default",
-		CreatedAt:          now,
-		UpdatedAt:          now,
+	for _, id := range requiredIDs {
+		if _, ok := existingByID[id]; ok {
+			continue
+		}
+
+		seed, ok := defaultRouteRuleByID(id)
+		if !ok {
+			continue
+		}
+
+		// Skip seeding if dependencies are missing. They may be added later.
+		if seed.WorkspaceID != "" {
+			if _, err := s.GetWorkspace(ctx, seed.WorkspaceID); err != nil {
+				slog.Warn("skipping default route seed (missing workspace)", "id", seed.ID, "workspace_id", seed.WorkspaceID)
+				continue
+			}
+		}
+		if seed.DownstreamServerID != "" {
+			if _, err := s.GetDownstreamServer(ctx, seed.DownstreamServerID); err != nil {
+				slog.Warn("skipping default route seed (missing downstream server)", "id", seed.ID, "downstream_server_id", seed.DownstreamServerID)
+				continue
+			}
+		}
+		if seed.AuthScopeID != "" {
+			if _, err := s.GetAuthScope(ctx, seed.AuthScopeID); err != nil {
+				slog.Warn("skipping default route seed (missing auth scope)", "id", seed.ID, "auth_scope_id", seed.AuthScopeID)
+				continue
+			}
+		}
+
+		seed.CreatedAt = now
+		seed.UpdatedAt = now
+		if err := s.CreateRouteRule(ctx, &seed); err != nil {
+			return err
+		}
+		slog.Info("migrated: seeded default route rule", "id", seed.ID, "name", seed.Name)
 	}
-	if err := s.CreateRouteRule(ctx, &r); err != nil {
-		return err
-	}
-	slog.Info("migrated: seeded builtin-allow route rule")
 	return nil
+}
+
+func defaultRouteRuleByID(id string) (store.RouteRule, bool) {
+	for _, r := range defaultRouteRules {
+		if r.ID == id {
+			return r, true
+		}
+	}
+	return store.RouteRule{}, false
 }
 
 // SeedDefaultWorkspaces creates workspace records if none exist.
