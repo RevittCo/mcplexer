@@ -17,6 +17,23 @@ const maxSearchResults = 20
 // BuiltinPrefix is the namespace prefix for MCPlexer built-in tools.
 const BuiltinPrefix = "mcpx__"
 
+// ToolAnnotations holds MCP tool annotation hints for client auto-approval.
+type ToolAnnotations struct {
+	Title           string `json:"title,omitempty"`
+	ReadOnlyHint    *bool  `json:"readOnlyHint,omitempty"`
+	DestructiveHint *bool  `json:"destructiveHint,omitempty"`
+	IdempotentHint  *bool  `json:"idempotentHint,omitempty"`
+	OpenWorldHint   *bool  `json:"openWorldHint,omitempty"`
+}
+
+func boolPtr(v bool) *bool { return &v }
+
+// withAnnotations serializes annotations into an Extras map for a Tool.
+func withAnnotations(a ToolAnnotations) map[string]json.RawMessage {
+	data, _ := json.Marshal(a)
+	return map[string]json.RawMessage{"annotations": data}
+}
+
 // legacyBuiltinPrefix is the old prefix, kept for backward compatibility.
 const legacyBuiltinPrefix = "mcplexer__"
 
@@ -39,16 +56,26 @@ func searchToolDefinition() Tool {
 				"query": {
 					"type": "string",
 					"description": "Search query to match against tool names and descriptions"
+				},
+				"namespace": {
+					"type": "string",
+					"description": "Optional namespace prefix to filter results (e.g. 'github', 'linear'). Lists all tools from that server."
 				}
-			},
-			"required": ["query"]
+			}
 		}`),
+		Extras: withAnnotations(ToolAnnotations{
+			Title:           "Search Tools",
+			ReadOnlyHint:    boolPtr(true),
+			DestructiveHint: boolPtr(false),
+			OpenWorldHint:   boolPtr(false),
+		}),
 	}
 }
 
 // handleSearchTools queries all dynamic-discovery servers and returns matching tools.
 // Results are filtered by the current session's workspace routes when a workspace is bound.
-func (h *handler) handleSearchTools(ctx context.Context, query string) (json.RawMessage, *RPCError) {
+// If namespace is non-empty, only tools from servers with that ToolNamespace are returned.
+func (h *handler) handleSearchTools(ctx context.Context, query, namespace string) (json.RawMessage, *RPCError) {
 	servers, err := h.store.ListDownstreamServers(ctx)
 	if err != nil {
 		return nil, &RPCError{Code: CodeInternalError, Message: fmt.Sprintf("list servers: %v", err)}
@@ -67,6 +94,21 @@ func (h *handler) handleSearchTools(ctx context.Context, query string) (json.Raw
 
 	if len(dynamicIDs) == 0 {
 		return marshalErrorResult("No dynamic servers configured."), nil
+	}
+
+	// Filter by namespace if specified.
+	if namespace != "" {
+		nsLower := strings.ToLower(namespace)
+		filtered := dynamicIDs[:0]
+		for _, id := range dynamicIDs {
+			if strings.ToLower(namespaces[id]) == nsLower {
+				filtered = append(filtered, id)
+			}
+		}
+		dynamicIDs = filtered
+		if len(dynamicIDs) == 0 {
+			return marshalToolResult(fmt.Sprintf("No servers found with namespace %q.", namespace)), nil
+		}
 	}
 
 	liveTools, err := h.manager.ListToolsForServers(ctx, dynamicIDs)
@@ -131,7 +173,7 @@ func (h *handler) handleSearchTools(ctx context.Context, query string) (json.Raw
 // filterByWorkspaceRoutes removes tools that the current session's workspace
 // chain cannot route to. All tools (including built-ins) are subject to routing.
 func (h *handler) filterByWorkspaceRoutes(ctx context.Context, tools []Tool) []Tool {
-	ancestors := h.sessions.workspaceAncestors()
+	ancestors := h.sessions.workspaceAncestors(ctx)
 
 	filtered := make([]Tool, 0, len(tools))
 	for _, t := range tools {
@@ -320,6 +362,11 @@ func flushCacheToolDefinition() Tool {
 				}
 			}
 		}`),
+		Extras: withAnnotations(ToolAnnotations{
+			Title:           "Flush Cache",
+			DestructiveHint: boolPtr(false),
+			OpenWorldHint:   boolPtr(false),
+		}),
 	}
 }
 
@@ -330,6 +377,11 @@ func approvalToolDefinitions() []Tool {
 			Name:        "mcpx__list_pending_approvals",
 			Description: "List pending tool call approvals waiting for review. Returns approval IDs, tool names, justifications, and requesting agent info. Your own pending requests are excluded.",
 			InputSchema: json.RawMessage(`{"type": "object", "properties": {}}`),
+			Extras: withAnnotations(ToolAnnotations{
+				ReadOnlyHint:    boolPtr(true),
+				DestructiveHint: boolPtr(false),
+				OpenWorldHint:   boolPtr(false),
+			}),
 		},
 		{
 			Name:        "mcpx__approve_tool_call",
@@ -348,6 +400,10 @@ func approvalToolDefinitions() []Tool {
 				},
 				"required": ["approval_id"]
 			}`),
+			Extras: withAnnotations(ToolAnnotations{
+				DestructiveHint: boolPtr(false),
+				OpenWorldHint:   boolPtr(false),
+			}),
 		},
 		{
 			Name:        "mcpx__deny_tool_call",
@@ -366,6 +422,10 @@ func approvalToolDefinitions() []Tool {
 				},
 				"required": ["approval_id", "reason"]
 			}`),
+			Extras: withAnnotations(ToolAnnotations{
+				DestructiveHint: boolPtr(false),
+				OpenWorldHint:   boolPtr(false),
+			}),
 		},
 	}
 }

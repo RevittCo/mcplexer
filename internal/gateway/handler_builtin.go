@@ -19,12 +19,13 @@ func (h *handler) handleBuiltinCall(
 	switch req.Name {
 	case "mcpx__search_tools":
 		var args struct {
-			Query string `json:"query"`
+			Query     string `json:"query"`
+			Namespace string `json:"namespace"`
 		}
 		if err := json.Unmarshal(req.Arguments, &args); err != nil {
 			return nil, &RPCError{Code: CodeInvalidParams, Message: err.Error()}
 		}
-		return h.handleSearchTools(ctx, args.Query)
+		return h.handleSearchTools(ctx, args.Query, args.Namespace)
 
 	case "mcpx__load_tools":
 		var args struct {

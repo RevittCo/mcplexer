@@ -106,7 +106,8 @@ func (m *mockStore) GetAuthScopeByName(_ context.Context, _ string) (*store.Auth
 func (m *mockStore) ListAuthScopes(_ context.Context) ([]store.AuthScope, error)          { return nil, nil }
 func (m *mockStore) UpdateAuthScope(_ context.Context, _ *store.AuthScope) error          { return nil }
 func (m *mockStore) DeleteAuthScope(_ context.Context, _ string) error                    { return nil }
-func (m *mockStore) UpdateAuthScopeTokenData(_ context.Context, _ string, _ []byte) error { return nil }
+func (m *mockStore) UpdateAuthScopeTokenData(_ context.Context, _ string, _ []byte) error     { return nil }
+func (m *mockStore) UpdateAuthScopeEncryptedData(_ context.Context, _ string, _ []byte) error { return nil }
 
 // Stubs — OAuthProviderStore.
 func (m *mockStore) CreateOAuthProvider(_ context.Context, _ *store.OAuthProvider) error { return nil }
@@ -613,7 +614,7 @@ func TestHandleSearchTools_FindsMatchingTools(t *testing.T) {
 	}
 
 	h, _ := newTestHandler(lister, servers)
-	result, rpcErr := h.handleSearchTools(context.Background(), "search")
+	result, rpcErr := h.handleSearchTools(context.Background(), "search", "")
 	if rpcErr != nil {
 		t.Fatalf("unexpected error: code=%d msg=%s", rpcErr.Code, rpcErr.Message)
 	}
@@ -645,7 +646,7 @@ func TestHandleSearchTools_NoDynamicServers(t *testing.T) {
 	}
 
 	h, _ := newTestHandler(lister, servers)
-	result, rpcErr := h.handleSearchTools(context.Background(), "anything")
+	result, rpcErr := h.handleSearchTools(context.Background(), "anything", "")
 	if rpcErr != nil {
 		t.Fatalf("unexpected error: code=%d msg=%s", rpcErr.Code, rpcErr.Message)
 	}

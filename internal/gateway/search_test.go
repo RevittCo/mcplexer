@@ -226,3 +226,128 @@ func TestFormatSearchResultsCapped(t *testing.T) {
 		t.Error("tool_20 should be excluded (past cap)")
 	}
 }
+
+func TestBuiltinToolAnnotations(t *testing.T) {
+	tests := []struct {
+		name            string
+		tool            Tool
+		wantTitle       string
+		wantReadOnly    *bool
+		wantDestructive *bool
+		wantOpenWorld   *bool
+	}{
+		{
+			name:            "search_tools",
+			tool:            searchToolDefinition(),
+			wantTitle:       "Search Tools",
+			wantReadOnly:    boolPtr(true),
+			wantDestructive: boolPtr(false),
+			wantOpenWorld:   boolPtr(false),
+		},
+		{
+			name:            "load_tools",
+			tool:            loadToolDefinition(),
+			wantTitle:       "Load Tools",
+			wantReadOnly:    boolPtr(true),
+			wantDestructive: boolPtr(false),
+			wantOpenWorld:   boolPtr(false),
+		},
+		{
+			name:            "unload_tools",
+			tool:            unloadToolDefinition(),
+			wantTitle:       "Unload Tools",
+			wantReadOnly:    boolPtr(true),
+			wantDestructive: boolPtr(false),
+			wantOpenWorld:   boolPtr(false),
+		},
+		{
+			name:            "flush_cache",
+			tool:            flushCacheToolDefinition(),
+			wantTitle:       "Flush Cache",
+			wantReadOnly:    nil,
+			wantDestructive: boolPtr(false),
+			wantOpenWorld:   boolPtr(false),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			raw, ok := tt.tool.Extras["annotations"]
+			if !ok {
+				t.Fatal("missing annotations in Extras")
+			}
+
+			var ann ToolAnnotations
+			if err := json.Unmarshal(raw, &ann); err != nil {
+				t.Fatalf("unmarshal annotations: %v", err)
+			}
+
+			if ann.Title != tt.wantTitle {
+				t.Errorf("title = %q, want %q", ann.Title, tt.wantTitle)
+			}
+			assertBoolPtr(t, "readOnlyHint", ann.ReadOnlyHint, tt.wantReadOnly)
+			assertBoolPtr(t, "destructiveHint", ann.DestructiveHint, tt.wantDestructive)
+			assertBoolPtr(t, "openWorldHint", ann.OpenWorldHint, tt.wantOpenWorld)
+		})
+	}
+
+	// Approval tools: list_pending has readOnly, approve/deny do not.
+	approvalTools := approvalToolDefinitions()
+	for _, tool := range approvalTools {
+		t.Run(tool.Name, func(t *testing.T) {
+			raw, ok := tool.Extras["annotations"]
+			if !ok {
+				t.Fatal("missing annotations in Extras")
+			}
+			var ann ToolAnnotations
+			if err := json.Unmarshal(raw, &ann); err != nil {
+				t.Fatalf("unmarshal annotations: %v", err)
+			}
+			assertBoolPtr(t, "destructiveHint", ann.DestructiveHint, boolPtr(false))
+			assertBoolPtr(t, "openWorldHint", ann.OpenWorldHint, boolPtr(false))
+
+			if tool.Name == "mcpx__list_pending_approvals" {
+				assertBoolPtr(t, "readOnlyHint", ann.ReadOnlyHint, boolPtr(true))
+			} else {
+				assertBoolPtr(t, "readOnlyHint", ann.ReadOnlyHint, nil)
+			}
+		})
+	}
+}
+
+func assertBoolPtr(t *testing.T, field string, got, want *bool) {
+	t.Helper()
+	if want == nil {
+		if got != nil {
+			t.Errorf("%s = %v, want nil", field, *got)
+		}
+		return
+	}
+	if got == nil {
+		t.Errorf("%s = nil, want %v", field, *want)
+		return
+	}
+	if *got != *want {
+		t.Errorf("%s = %v, want %v", field, *got, *want)
+	}
+}
+
+func TestSearchToolDefinitionHasNamespaceParam(t *testing.T) {
+	tool := searchToolDefinition()
+	var schema struct {
+		Properties map[string]json.RawMessage `json:"properties"`
+		Required   []string                   `json:"required"`
+	}
+	if err := json.Unmarshal(tool.InputSchema, &schema); err != nil {
+		t.Fatalf("unmarshal schema: %v", err)
+	}
+	if _, ok := schema.Properties["namespace"]; !ok {
+		t.Error("search_tools schema missing 'namespace' property")
+	}
+	// query should no longer be required (both are optional)
+	for _, r := range schema.Required {
+		if r == "query" {
+			t.Error("query should not be required when namespace can be used alone")
+		}
+	}
+}

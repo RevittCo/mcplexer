@@ -24,6 +24,12 @@ func loadToolDefinition() Tool {
 			},
 			"required": ["tools"]
 		}`),
+		Extras: withAnnotations(ToolAnnotations{
+			Title:           "Load Tools",
+			ReadOnlyHint:    boolPtr(true),
+			DestructiveHint: boolPtr(false),
+			OpenWorldHint:   boolPtr(false),
+		}),
 	}
 }
 
@@ -43,6 +49,12 @@ func unloadToolDefinition() Tool {
 			},
 			"required": ["tools"]
 		}`),
+		Extras: withAnnotations(ToolAnnotations{
+			Title:           "Unload Tools",
+			ReadOnlyHint:    boolPtr(true),
+			DestructiveHint: boolPtr(false),
+			OpenWorldHint:   boolPtr(false),
+		}),
 	}
 }
 
