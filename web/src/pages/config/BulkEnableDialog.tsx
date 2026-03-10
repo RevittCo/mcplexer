@@ -4,6 +4,13 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
   Dialog,
   DialogContent,
   DialogFooter,
@@ -37,7 +44,7 @@ export function BulkEnableDialog({
   const [saving, setSaving] = useState(false)
   const [showDefaults, setShowDefaults] = useState(false)
   const [priority, setPriority] = useState(100)
-  const [requiresApproval, setRequiresApproval] = useState(false)
+  const [approvalMode, setApprovalMode] = useState<'none' | 'write' | 'all'>('none')
 
   const available = downstreams.filter((d) => !d.disabled)
 
@@ -66,7 +73,7 @@ export function BulkEnableDialog({
           auth_scope_id: '',
           policy: 'allow' as const,
           log_level: 'info',
-          requires_approval: requiresApproval,
+          approval_mode: approvalMode,
           approval_timeout: 300,
         }
       })
@@ -87,7 +94,7 @@ export function BulkEnableDialog({
   if (open && !prevOpen) {
     setSelected(new Set())
     setPriority(100)
-    setRequiresApproval(false)
+    setApprovalMode('none')
     setShowDefaults(false)
   }
   if (open !== prevOpen) setPrevOpen(open)
@@ -149,13 +156,22 @@ export function BulkEnableDialog({
                 className="w-32"
               />
             </div>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <Checkbox
-                checked={requiresApproval}
-                onCheckedChange={(checked) => setRequiresApproval(checked === true)}
-              />
-              <span className="text-sm">Requires approval</span>
-            </label>
+            <div className="space-y-2">
+              <Label className="text-xs text-muted-foreground">Approval</Label>
+              <Select
+                value={approvalMode}
+                onValueChange={(v) => setApprovalMode(v as 'none' | 'write' | 'all')}
+              >
+                <SelectTrigger className="w-48">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
+                  <SelectItem value="write">Write only (destructive)</SelectItem>
+                  <SelectItem value="all">All tool calls</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         )}
 

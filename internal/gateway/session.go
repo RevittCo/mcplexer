@@ -32,18 +32,20 @@ const (
 // sessionManager manages the current MCP client session.
 type sessionManager struct {
 	store      store.Store
+	engine     *routing.Engine
 	transport  TransportMode
 	session    *store.Session
 	clientPath string                     // trusted client CWD
 	wsChain    []routing.WorkspaceAncestor // resolved workspace ancestors, most specific first
+	lastWSVer  int64                       // last seen Engine.WorkspaceVersion
 
 	// Active tool set for dynamic tool loading.
 	activeTools map[string]Tool
 	toolsMu     sync.RWMutex
 }
 
-func newSessionManager(s store.Store, t TransportMode) *sessionManager {
-	return &sessionManager{store: s, transport: t}
+func newSessionManager(s store.Store, e *routing.Engine, t TransportMode) *sessionManager {
+	return &sessionManager{store: s, engine: e, transport: t}
 }
 
 func (sm *sessionManager) create(ctx context.Context, clientInfo ClientInfo, roots []Root) error {
@@ -53,7 +55,11 @@ func (sm *sessionManager) create(ctx context.Context, clientInfo ClientInfo, roo
 		ModelHint:  clientInfo.Version,
 	}
 
-	sm.wsChain = sm.resolveWorkspaceChain(ctx, roots)
+	sm.clientPath = sm.detectClientRoot(roots)
+	sm.wsChain = sm.resolveChainForPath(ctx, sm.clientPath)
+	if sm.engine != nil {
+		sm.lastWSVer = sm.engine.WorkspaceVersion()
+	}
 	if len(sm.wsChain) > 0 {
 		sm.session.WorkspaceID = &sm.wsChain[0].ID
 	}
@@ -61,17 +67,9 @@ func (sm *sessionManager) create(ctx context.Context, clientInfo ClientInfo, roo
 	return sm.store.CreateSession(ctx, sm.session)
 }
 
-// resolveWorkspaceChain finds all workspaces whose root path is an ancestor
-// of the client's working directory, ordered from most specific to least.
-//
-// Security: in stdio mode the client root is determined from os.Getwd()
-// (inherited from the parent process) which cannot be spoofed via MCP. In
-// socket/HTTP mode the server CWD is unrelated to the client, so we accept
-// client-reported roots with a log for auditability.
-func (sm *sessionManager) resolveWorkspaceChain(ctx context.Context, roots []Root) []routing.WorkspaceAncestor {
-	clientRoot := sm.detectClientRoot(roots)
-	sm.clientPath = clientRoot
-
+// resolveChainForPath finds all workspaces whose root path is an ancestor
+// of clientRoot, ordered from most specific to least.
+func (sm *sessionManager) resolveChainForPath(ctx context.Context, clientRoot string) []routing.WorkspaceAncestor {
 	workspaces, err := sm.store.ListWorkspaces(ctx)
 	if err != nil {
 		slog.Warn("failed to list workspaces for session binding", "error", err)
@@ -212,7 +210,16 @@ func (sm *sessionManager) workspaceName() string {
 	return sm.wsChain[0].Name
 }
 
-func (sm *sessionManager) workspaceAncestors() []routing.WorkspaceAncestor {
+func (sm *sessionManager) workspaceAncestors(ctx context.Context) []routing.WorkspaceAncestor {
+	if sm.engine != nil {
+		if v := sm.engine.WorkspaceVersion(); v != sm.lastWSVer {
+			sm.wsChain = sm.resolveChainForPath(ctx, sm.clientPath)
+			sm.lastWSVer = v
+			slog.Info("session workspace chain refreshed",
+				"session", sm.sessionID(),
+				"workspaces", len(sm.wsChain))
+		}
+	}
 	return sm.wsChain
 }
 

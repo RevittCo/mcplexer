@@ -22,12 +22,13 @@ import {
   updateAuthScope,
 } from '@/api/client'
 import type { AuthScope, OAuthStatus } from '@/api/types'
-import { Copy, ExternalLink, Lock, Pencil, Plus, Trash2, Unplug } from 'lucide-react'
+import { Copy, ExternalLink, Key, Lock, Pencil, Plus, Trash2, Unplug } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { AuthScopeDialog, emptyAuthScopeForm } from './AuthScopeDialog'
 import type { AuthScopeFormData } from './AuthScopeDialog'
+import { ApiKeyDialog } from './ApiKeyDialog'
 import { redirectToOAuth } from '@/lib/safe-redirect'
 
 export function AuthScopesPage() {
@@ -43,6 +44,7 @@ export function AuthScopesPage() {
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<AuthScope | null>(null)
+  const [secretsTarget, setSecretsTarget] = useState<AuthScope | null>(null)
 
   function openCreate() {
     setEditing(null)
@@ -69,11 +71,19 @@ export function AuthScopesPage() {
     try {
       if (editing) {
         await updateAuthScope(editing.id, form)
+        setDialogOpen(false)
+        toast.success('Credential updated')
       } else {
-        await createAuthScope(form)
+        const created = await createAuthScope(form)
+        if (created.type === 'env' || created.type === 'header') {
+          // Transition to edit mode so the user can immediately add secrets
+          setEditing(created)
+          toast.success('Credential created — now add your secrets')
+        } else {
+          setDialogOpen(false)
+          toast.success('Credential created')
+        }
       }
-      setDialogOpen(false)
-      toast.success(editing ? 'Credential updated' : 'Credential created')
       refetch()
     } catch (err: unknown) {
       setSaveError(err instanceof Error ? err.message : 'Failed to save credential')
@@ -149,7 +159,7 @@ export function AuthScopesPage() {
                 <TableRow className="border-border/50 hover:bg-transparent">
                   <TableHead>Name</TableHead>
                   <TableHead>Type</TableHead>
-                  <TableHead className="hidden sm:table-cell">OAuth Status</TableHead>
+                  <TableHead className="hidden sm:table-cell">Status</TableHead>
                   <TableHead className="hidden md:table-cell">Redaction Hints</TableHead>
                   <TableHead>Actions</TableHead>
                 </TableRow>
@@ -179,6 +189,13 @@ export function AuthScopesPage() {
                       <TableCell className="hidden sm:table-cell">
                         {scope.type === 'oauth2' ? (
                           <OAuthStatusBadge scopeId={scope.id} />
+                        ) : scope.type === 'env' || scope.type === 'header' ? (
+                          <Badge
+                            variant="outline"
+                            className={`text-xs ${scope.has_secrets ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20' : 'bg-amber-500/10 text-amber-600 border-amber-500/20'}`}
+                          >
+                            {scope.has_secrets ? 'Configured' : 'Needs Setup'}
+                          </Badge>
                         ) : (
                           <span className="text-muted-foreground">-</span>
                         )}
@@ -241,6 +258,23 @@ export function AuthScopesPage() {
                             </TooltipTrigger>
                             <TooltipContent>Delete</TooltipContent>
                           </Tooltip>
+                          {scope.type === 'env' && (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className={`h-7 w-7 p-0 ${scope.has_secrets ? 'text-emerald-600 hover:bg-emerald-500/10' : 'text-amber-600 hover:bg-amber-500/10'}`}
+                                  onClick={() => setSecretsTarget(scope)}
+                                >
+                                  <Key className="h-3.5 w-3.5" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                {scope.has_secrets ? 'Manage Secrets' : 'Add Secrets'}
+                              </TooltipContent>
+                            </Tooltip>
+                          )}
                           {scope.type === 'oauth2' && (
                             <>
                               <Tooltip>
@@ -290,6 +324,8 @@ export function AuthScopesPage() {
         onSave={handleSave}
         saving={saving}
         editing={!!editing}
+        editingId={editing?.id}
+        envFields={editing?.env_fields}
         providers={providers ?? []}
         saveError={saveError}
       />
@@ -303,6 +339,19 @@ export function AuthScopesPage() {
         variant="destructive"
         onConfirm={confirmDelete}
       />
+
+      {secretsTarget && (
+        <ApiKeyDialog
+          open={!!secretsTarget}
+          onClose={() => {
+            setSecretsTarget(null)
+            refetch()
+          }}
+          authScopeId={secretsTarget.id}
+          authScopeName={secretsTarget.name}
+          serverName={secretsTarget.name}
+        />
+      )}
     </div>
   )
 }

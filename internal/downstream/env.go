@@ -28,7 +28,16 @@ var commonPaths = func() []string {
 			filepath.Join(home, ".local", "bin"),
 			filepath.Join(home, "go", "bin"),
 			filepath.Join(home, ".cargo", "bin"),
+			filepath.Join(home, ".volta", "bin"),
 		)
+		// nvm: detect current default node version bin directory.
+		if matches, _ := filepath.Glob(filepath.Join(home, ".nvm", "versions", "node", "*", "bin")); len(matches) > 0 {
+			paths = append(paths, matches[len(matches)-1]) // latest version
+		}
+		// fnm: detect current node version bin directory.
+		if matches, _ := filepath.Glob(filepath.Join(home, ".fnm", "node-versions", "*", "installation", "bin")); len(matches) > 0 {
+			paths = append(paths, matches[len(matches)-1])
+		}
 	}
 	return paths
 }()

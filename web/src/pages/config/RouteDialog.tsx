@@ -29,7 +29,7 @@ export interface RouteFormData {
   auth_scope_id: string
   policy: 'allow' | 'deny'
   log_level: string
-  requires_approval: boolean
+  approval_mode: 'none' | 'write' | 'all'
   approval_timeout: number
 }
 
@@ -43,7 +43,7 @@ export const emptyForm: RouteFormData = {
   auth_scope_id: '',
   policy: 'allow',
   log_level: 'info',
-  requires_approval: false,
+  approval_mode: 'none',
   approval_timeout: 300,
 }
 
@@ -214,17 +214,29 @@ export function RouteDialog({
 
           {form.policy === 'allow' && (
             <div className="space-y-3 rounded-md border border-border/50 p-3">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={form.requires_approval}
-                  onChange={(e) => setForm((f) => ({ ...f, requires_approval: e.target.checked }))}
-                  className="h-4 w-4 rounded border-border accent-primary"
-                />
-                <span className="text-sm">Requires approval</span>
-              </label>
-              {form.requires_approval && (
-                <div className="space-y-2 pl-6">
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">Approval</Label>
+                <Select
+                  value={form.approval_mode}
+                  onValueChange={(v) => setForm((f) => ({ ...f, approval_mode: v as 'none' | 'write' | 'all' }))}
+                >
+                  <SelectTrigger className="w-48">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None</SelectItem>
+                    <SelectItem value="write">Write only (destructive)</SelectItem>
+                    <SelectItem value="all">All tool calls</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground/60">
+                  {form.approval_mode === 'none' && 'Tool calls execute without approval.'}
+                  {form.approval_mode === 'write' && 'Read-only tools execute freely; write/destructive tools require approval.'}
+                  {form.approval_mode === 'all' && 'All tool calls require approval before executing.'}
+                </p>
+              </div>
+              {form.approval_mode !== 'none' && (
+                <div className="space-y-2">
                   <Label className="text-xs text-muted-foreground">Timeout (seconds)</Label>
                   <Input
                     type="number"

@@ -7,7 +7,10 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -99,7 +102,18 @@ func (inst *Instance) start(ctx context.Context) error {
 	childCtx, cancel := context.WithCancel(ctx)
 	inst.cancel = cancel
 
-	cmd := exec.CommandContext(childCtx, inst.command, inst.args...)
+	// Resolve the command to an absolute path using the augmented PATH
+	// (not the daemon's minimal launchd PATH). Go's exec.Command uses
+	// os.Getenv("PATH") for LookPath, which may not include directories
+	// like /opt/homebrew/bin that we add via MergeEnv/augmentPath.
+	cmdPath := inst.command
+	if !filepath.IsAbs(cmdPath) {
+		if resolved, err := lookPathInEnv(cmdPath, inst.env); err == nil {
+			cmdPath = resolved
+		}
+	}
+
+	cmd := exec.CommandContext(childCtx, cmdPath, inst.args...)
 	cmd.Env = inst.env
 
 	stdin, err := cmd.StdinPipe()
@@ -393,4 +407,28 @@ func (inst *Instance) resetIdleTimer() {
 			"server", inst.key.ServerID)
 		inst.stop()
 	})
+}
+
+// lookPathInEnv resolves a command name to its absolute path using the PATH
+// from the given environment slice (not the current process's PATH). This is
+// needed because Go's exec.Command uses os.Getenv("PATH") for resolution,
+// which may be a minimal launchd PATH missing directories like /opt/homebrew/bin.
+func lookPathInEnv(cmd string, env []string) (string, error) {
+	var pathVal string
+	for _, e := range env {
+		if strings.HasPrefix(e, "PATH=") {
+			pathVal = e[5:]
+			break
+		}
+	}
+	if pathVal == "" {
+		return "", fmt.Errorf("no PATH in env")
+	}
+	for _, dir := range filepath.SplitList(pathVal) {
+		candidate := filepath.Join(dir, cmd)
+		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+			return candidate, nil
+		}
+	}
+	return "", fmt.Errorf("%s not found in augmented PATH", cmd)
 }

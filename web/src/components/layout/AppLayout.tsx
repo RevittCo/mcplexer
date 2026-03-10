@@ -199,7 +199,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-screen">
       {/* Desktop sidebar */}
-      <aside className="hidden w-56 flex-col border-r border-sidebar-border bg-sidebar-background md:flex">
+      <aside className="hidden w-56 flex-col border-r border-sidebar-border bg-sidebar-background md:flex sticky top-0 h-screen overflow-y-auto">
         <BrandHeader />
         <SidebarNav configOpen={configOpen} setConfigOpen={setConfigOpen} />
         <StatusBar />

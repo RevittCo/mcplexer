@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/revittco/mcplexer/internal/cache"
@@ -34,7 +35,7 @@ type RouteResult struct {
 	OriginalToolName   string
 	AllowedOrgs        json.RawMessage
 	AllowedRepos       json.RawMessage
-	RequiresApproval   bool
+	ApprovalMode       string
 	ApprovalTimeout    int
 
 	// Set by RouteWithFallback to record which workspace and subpath matched.
@@ -69,6 +70,7 @@ func (e *DeniedError) Unwrap() error {
 type Engine struct {
 	store      store.Store
 	rulesCache *cache.Cache[string, []parsedRule]
+	wsVersion  atomic.Int64 // bumped when workspaces change
 }
 
 // NewEngine creates a new routing engine.
@@ -103,9 +105,17 @@ func (e *Engine) InvalidateWorkspace(workspaceID string) {
 	e.rulesCache.Invalidate(workspaceID)
 }
 
-// InvalidateAllRoutes removes all cached route rules.
+// InvalidateAllRoutes removes all cached route rules and bumps the workspace
+// version so that active sessions lazily re-resolve their workspace chain.
 func (e *Engine) InvalidateAllRoutes() {
 	e.rulesCache.Flush()
+	e.wsVersion.Add(1)
+}
+
+// WorkspaceVersion returns the current workspace version counter. Sessions
+// compare this against their last-seen value to detect workspace changes.
+func (e *Engine) WorkspaceVersion() int64 {
+	return e.wsVersion.Load()
 }
 
 // RouteStats returns cache statistics for route resolution.
@@ -227,7 +237,7 @@ func matchRoute(rules []parsedRule, rc RouteContext) (*RouteResult, error) {
 			OriginalToolName:   rc.ToolName,
 			AllowedOrgs:        r.AllowedOrgs,
 			AllowedRepos:       r.AllowedRepos,
-			RequiresApproval:   r.RequiresApproval,
+			ApprovalMode:       r.ApprovalMode,
 			ApprovalTimeout:    r.ApprovalTimeout,
 		}, nil
 	}

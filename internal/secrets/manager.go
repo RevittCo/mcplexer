@@ -38,8 +38,7 @@ func (m *Manager) Put(ctx context.Context, scopeID, key string, plaintext []byte
 		return err
 	}
 
-	scope.EncryptedData = encrypted
-	if err := m.store.UpdateAuthScope(ctx, scope); err != nil {
+	if err := m.store.UpdateAuthScopeEncryptedData(ctx, scopeID, encrypted); err != nil {
 		return fmt.Errorf("update auth scope: %w", err)
 	}
 	return nil
@@ -105,8 +104,7 @@ func (m *Manager) Delete(ctx context.Context, scopeID, key string) error {
 		return err
 	}
 
-	scope.EncryptedData = encrypted
-	return m.store.UpdateAuthScope(ctx, scope)
+	return m.store.UpdateAuthScopeEncryptedData(ctx, scopeID, encrypted)
 }
 
 // decryptSecrets decrypts the stored blob into a key/value map.

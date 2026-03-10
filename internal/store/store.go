@@ -47,6 +47,7 @@ type AuthScopeStore interface {
 	UpdateAuthScope(ctx context.Context, a *AuthScope) error
 	DeleteAuthScope(ctx context.Context, id string) error
 	UpdateAuthScopeTokenData(ctx context.Context, id string, data []byte) error
+	UpdateAuthScopeEncryptedData(ctx context.Context, id string, data []byte) error
 }
 
 // OAuthProviderStore manages OAuth provider records.

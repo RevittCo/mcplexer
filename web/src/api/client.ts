@@ -118,6 +118,24 @@ export function deleteAuthScope(id: string): Promise<void> {
   return request(`/auth-scopes/${id}`, { method: 'DELETE' })
 }
 
+// Secrets (env-type auth scopes)
+export function listSecretKeys(scopeId: string): Promise<{ keys: string[] }> {
+  return request(`/auth-scopes/${scopeId}/secrets`)
+}
+
+export function putSecret(scopeId: string, key: string, value: string): Promise<{ status: string }> {
+  return request(`/auth-scopes/${scopeId}/secrets`, {
+    method: 'PUT',
+    body: JSON.stringify({ key, value }),
+  })
+}
+
+export function deleteSecret(scopeId: string, key: string): Promise<void> {
+  return request(`/auth-scopes/${scopeId}/secrets/${encodeURIComponent(key)}`, {
+    method: 'DELETE',
+  })
+}
+
 // OAuth Providers
 export function listOAuthProviders(): Promise<OAuthProvider[]> {
   return request('/oauth-providers')

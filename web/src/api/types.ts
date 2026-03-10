@@ -8,12 +8,19 @@ export interface Workspace {
   updated_at: string
 }
 
+export interface EnvField {
+  key: string
+  label: string
+  secret: boolean
+}
+
 export interface AuthScope {
   id: string
   name: string
   type: 'env' | 'header' | 'oauth2'
   oauth_provider_id: string
   has_secrets: boolean
+  env_fields?: EnvField[]
   redaction_hints: string[]
   source: string
   created_at: string
@@ -146,7 +153,7 @@ export interface RouteRule {
   auth_scope_id: string
   policy: 'allow' | 'deny'
   log_level: string
-  requires_approval: boolean
+  approval_mode: 'none' | 'write' | 'all'
   approval_timeout: number
   created_at: string
   updated_at: string

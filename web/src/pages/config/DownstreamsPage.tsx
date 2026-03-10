@@ -15,14 +15,17 @@ import {
   createDownstream,
   deleteDownstream,
   getDownstreamOAuthStatus,
+  listAuthScopes,
   listDownstreams,
+  listRoutes,
   updateDownstream,
 } from '@/api/client'
-import type { DownstreamOAuthStatusEntry, DownstreamServer } from '@/api/types'
+import type { AuthScope, DownstreamOAuthStatusEntry, DownstreamServer } from '@/api/types'
 import { ConnectDialog } from './ConnectDialog'
 import { DownstreamDialog, emptyDownstreamForm } from './DownstreamDialog'
 import type { DownstreamFormData } from './DownstreamDialog'
-import { Copy, Link, Pause, Pencil, Play, Plus, Server, Trash2 } from 'lucide-react'
+import { ApiKeyDialog } from './ApiKeyDialog'
+import { Copy, Key, Link, Pause, Pencil, Play, Plus, Server, Trash2 } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
@@ -42,6 +45,26 @@ export function DownstreamsPage() {
   const [oauthStatuses, setOauthStatuses] = useState<Record<string, DownstreamOAuthStatusEntry[]>>({})
   const [statusErrors, setStatusErrors] = useState<Record<string, boolean>>({})
   const [deleteTarget, setDeleteTarget] = useState<DownstreamServer | null>(null)
+  const [apiKeyTarget, setApiKeyTarget] = useState<{ server: DownstreamServer; scope: AuthScope } | null>(null)
+
+  // Map of server_id -> env-type auth scope (derived from route rules)
+  const [serverAuthScopes, setServerAuthScopes] = useState<Record<string, AuthScope>>({})
+
+  useEffect(() => {
+    let active = true
+    Promise.all([listRoutes(), listAuthScopes()]).then(([routes, scopes]) => {
+      if (!active) return
+      const scopeById = new Map(scopes.filter((s) => s.type === 'env').map((s) => [s.id, s]))
+      const result: Record<string, AuthScope> = {}
+      for (const rule of routes) {
+        if (rule.auth_scope_id && scopeById.has(rule.auth_scope_id) && rule.downstream_server_id) {
+          result[rule.downstream_server_id] = scopeById.get(rule.auth_scope_id)!
+        }
+      }
+      setServerAuthScopes(result)
+    }).catch(() => { /* non-critical */ })
+    return () => { active = false }
+  }, [data])
 
   useEffect(() => {
     if (!data) return
@@ -287,6 +310,23 @@ export function DownstreamsPage() {
                             </TooltipTrigger>
                             <TooltipContent>Delete</TooltipContent>
                           </Tooltip>
+                          {serverAuthScopes[ds.id] && (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className={`h-7 w-7 p-0 ${serverAuthScopes[ds.id].has_secrets ? 'text-emerald-600 hover:bg-emerald-500/10' : 'text-amber-600 hover:bg-amber-500/10'}`}
+                                  onClick={() => setApiKeyTarget({ server: ds, scope: serverAuthScopes[ds.id] })}
+                                >
+                                  <Key className="h-3.5 w-3.5" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                {serverAuthScopes[ds.id].has_secrets ? 'API Keys (configured)' : 'API Keys (needs setup)'}
+                              </TooltipContent>
+                            </Tooltip>
+                          )}
                           {ds.transport === 'http' && (
                             <Tooltip>
                               <TooltipTrigger asChild>
@@ -340,6 +380,29 @@ export function DownstreamsPage() {
         variant="destructive"
         onConfirm={confirmDelete}
       />
+
+      {apiKeyTarget && (
+        <ApiKeyDialog
+          open={!!apiKeyTarget}
+          onClose={() => {
+            setApiKeyTarget(null)
+            // Refresh auth scope state after changes
+            Promise.all([listRoutes(), listAuthScopes()]).then(([routes, scopes]) => {
+              const scopeById = new Map(scopes.filter((s) => s.type === 'env').map((s) => [s.id, s]))
+              const result: Record<string, AuthScope> = {}
+              for (const rule of routes) {
+                if (rule.auth_scope_id && scopeById.has(rule.auth_scope_id) && rule.downstream_server_id) {
+                  result[rule.downstream_server_id] = scopeById.get(rule.auth_scope_id)!
+                }
+              }
+              setServerAuthScopes(result)
+            }).catch(() => {})
+          }}
+          authScopeId={apiKeyTarget.scope.id}
+          authScopeName={apiKeyTarget.scope.name}
+          serverName={apiKeyTarget.server.name}
+        />
+      )}
     </div>
   )
 }

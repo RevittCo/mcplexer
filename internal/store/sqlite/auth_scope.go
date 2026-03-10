@@ -118,11 +118,11 @@ func (d *DB) UpdateAuthScope(ctx context.Context, a *store.AuthScope) error {
 
 	res, err := d.q.ExecContext(ctx, `
 		UPDATE auth_scopes
-		SET name = ?, type = ?, encrypted_data = ?, redaction_hints = ?,
-		    oauth_provider_id = ?, oauth_token_data = ?, source = ?, updated_at = ?
+		SET name = ?, type = ?, redaction_hints = ?,
+		    oauth_provider_id = ?, source = ?, updated_at = ?
 		WHERE id = ?`,
-		a.Name, a.Type, a.EncryptedData, hints,
-		a.OAuthProviderID, a.OAuthTokenData, a.Source,
+		a.Name, a.Type, hints,
+		a.OAuthProviderID, a.Source,
 		formatTime(a.UpdatedAt), a.ID,
 	)
 	if err != nil {
@@ -134,6 +134,17 @@ func (d *DB) UpdateAuthScope(ctx context.Context, a *store.AuthScope) error {
 func (d *DB) UpdateAuthScopeTokenData(ctx context.Context, id string, data []byte) error {
 	res, err := d.q.ExecContext(ctx, `
 		UPDATE auth_scopes SET oauth_token_data = ?, updated_at = ? WHERE id = ?`,
+		data, formatTime(time.Now().UTC()), id,
+	)
+	if err != nil {
+		return err
+	}
+	return checkRowsAffected(res)
+}
+
+func (d *DB) UpdateAuthScopeEncryptedData(ctx context.Context, id string, data []byte) error {
+	res, err := d.q.ExecContext(ctx, `
+		UPDATE auth_scopes SET encrypted_data = ?, updated_at = ? WHERE id = ?`,
 		data, formatTime(time.Now().UTC()), id,
 	)
 	if err != nil {

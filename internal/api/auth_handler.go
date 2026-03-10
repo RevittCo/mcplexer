@@ -8,6 +8,13 @@ import (
 	"github.com/revittco/mcplexer/internal/store"
 )
 
+// envFieldResponse is the JSON representation of a required env field.
+type envFieldResponse struct {
+	Key    string `json:"key"`
+	Label  string `json:"label"`
+	Secret bool   `json:"secret"`
+}
+
 type authHandler struct {
 	svc   *config.Service
 	store store.AuthScopeStore
@@ -16,14 +23,22 @@ type authHandler struct {
 // authScopeResponse masks EncryptedData from API responses.
 type authScopeResponse struct {
 	store.AuthScope
-	HasSecrets bool `json:"has_secrets"`
+	HasSecrets bool               `json:"has_secrets"`
+	EnvFields  []envFieldResponse `json:"env_fields,omitempty"`
 }
 
 func newAuthScopeResponse(a *store.AuthScope) authScopeResponse {
-	return authScopeResponse{
+	resp := authScopeResponse{
 		AuthScope:  *a,
 		HasSecrets: len(a.EncryptedData) > 0,
 	}
+	if fields := config.GetEnvFields(a.ID); len(fields) > 0 {
+		resp.EnvFields = make([]envFieldResponse, len(fields))
+		for i, f := range fields {
+			resp.EnvFields[i] = envFieldResponse{Key: f.Key, Label: f.Label, Secret: f.Secret}
+		}
+	}
+	return resp
 }
 
 func (h *authHandler) list(w http.ResponseWriter, r *http.Request) {
@@ -86,7 +101,13 @@ func (h *authHandler) update(w http.ResponseWriter, r *http.Request) {
 		writeErrorDetail(w, http.StatusBadRequest, "failed to update auth scope", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, newAuthScopeResponse(&a))
+	// Re-read from store to get accurate encrypted_data / has_secrets status.
+	updated, err := h.store.GetAuthScope(r.Context(), id)
+	if err != nil {
+		writeJSON(w, http.StatusOK, newAuthScopeResponse(&a))
+		return
+	}
+	writeJSON(w, http.StatusOK, newAuthScopeResponse(updated))
 }
 
 func (h *authHandler) delete(w http.ResponseWriter, r *http.Request) {

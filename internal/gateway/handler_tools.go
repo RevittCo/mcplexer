@@ -216,7 +216,7 @@ func (h *handler) handleToolsCall(
 	// Route ALL tools through the engine (including built-ins).
 	routeResult, err := h.engine.RouteWithFallback(ctx, routing.RouteContext{
 		ToolName: req.Name,
-	}, h.sessions.clientRoot(), h.sessions.workspaceAncestors())
+	}, h.sessions.clientRoot(), h.sessions.workspaceAncestors(ctx))
 	if err != nil {
 		rpcErr := mapRouteError(err)
 		h.recordAuditBlocked(ctx, req.Name, req.Arguments, nil, nil, rpcErr, start)
@@ -251,13 +251,25 @@ func (h *handler) handleToolsCall(
 		}
 	}
 
+	// Look up server name for clearer error messages.
+	serverName := routeResult.DownstreamServerID
+	if srv, err := h.store.GetDownstreamServer(ctx, routeResult.DownstreamServerID); err == nil {
+		serverName = srv.Name
+	}
+
 	// Two-phase approval interception.
-	if routeResult.RequiresApproval && h.approvals != nil {
-		result, rpcErr := h.handleApprovalGate(ctx, req, routeResult, originalTool, start)
-		if result != nil || rpcErr != nil {
-			return result, rpcErr
+	if routeResult.ApprovalMode != "" && routeResult.ApprovalMode != "none" && h.approvals != nil {
+		needsApproval := true
+		if routeResult.ApprovalMode == "write" {
+			needsApproval = !h.isReadOnlyTool(ctx, routeResult.DownstreamServerID, originalTool)
 		}
-		// Approval granted — fall through to dispatch.
+		if needsApproval {
+			result, rpcErr := h.handleApprovalGate(ctx, req, routeResult, originalTool, start)
+			if result != nil || rpcErr != nil {
+				return result, rpcErr
+			}
+			// Approval granted — fall through to dispatch.
+		}
 	}
 
 	// Extract _cache_bust from arguments if present.
@@ -280,7 +292,7 @@ func (h *handler) handleToolsCall(
 		if callErr != nil {
 			rpcErr := &RPCError{
 				Code:    CodeProcessError,
-				Message: fmt.Sprintf("downstream call: %v", callErr),
+				Message: formatDownstreamError(serverName, callErr),
 			}
 			h.recordAudit(ctx, req.Name, req.Arguments, routeResult, nil, rpcErr, start)
 			return nil, rpcErr
@@ -300,7 +312,7 @@ func (h *handler) handleToolsCall(
 		if callErr != nil {
 			rpcErr := &RPCError{
 				Code:    CodeProcessError,
-				Message: fmt.Sprintf("downstream call: %v", callErr),
+				Message: formatDownstreamError(serverName, callErr),
 			}
 			h.recordAudit(ctx, req.Name, req.Arguments, routeResult, nil, rpcErr, start)
 			return nil, rpcErr
@@ -371,4 +383,76 @@ func extractOriginalToolName(namespacedTool string) string {
 		return after
 	}
 	return namespacedTool
+}
+
+// formatDownstreamError produces a human-readable error message for downstream
+// failures, including the server name and actionable hints where possible.
+func formatDownstreamError(serverName string, err error) string {
+	msg := err.Error()
+
+	// Extract the root cause from wrapped error chains.
+	root := msg
+	for _, prefix := range []string{
+		"get or start instance: ",
+		"start instance: ",
+		"start process: ",
+		"initialize: ",
+	} {
+		if idx := strings.LastIndex(root, prefix); idx >= 0 {
+			root = root[idx+len(prefix):]
+		}
+	}
+
+	// Provide actionable hints for common failures.
+	switch {
+	case strings.Contains(root, "exec:"):
+		// e.g. exec: "npx": executable file not found in $PATH
+		return fmt.Sprintf("%s server failed to start: %s — ensure the required command is installed and in PATH", serverName, root)
+	case strings.Contains(root, "no initialize response"):
+		return fmt.Sprintf("%s server started but did not respond (process may have crashed). Check that any required services (e.g. database, Docker) are running.", serverName)
+	case strings.Contains(root, "timed out"):
+		return fmt.Sprintf("%s server did not respond within the timeout period. The server may be slow to start or unable to connect to its backend.", serverName)
+	case strings.Contains(root, "connection refused"):
+		return fmt.Sprintf("%s server could not connect to its backend service. Ensure the service is running and accessible.", serverName)
+	default:
+		return fmt.Sprintf("%s server error: %s", serverName, root)
+	}
+}
+
+// isReadOnlyTool checks the tool's annotations for readOnlyHint.
+// Returns true if the tool is explicitly marked as read-only.
+func (h *handler) isReadOnlyTool(ctx context.Context, serverID, toolName string) bool {
+	srv, err := h.store.GetDownstreamServer(ctx, serverID)
+	if err != nil || len(srv.CapabilitiesCache) == 0 {
+		return false
+	}
+
+	var result struct {
+		Tools []struct {
+			Name        string                     `json:"name"`
+			Annotations map[string]json.RawMessage `json:"annotations"`
+		} `json:"tools"`
+	}
+	if err := json.Unmarshal(srv.CapabilitiesCache, &result); err != nil {
+		return false
+	}
+
+	for _, t := range result.Tools {
+		if t.Name != toolName {
+			continue
+		}
+		if t.Annotations == nil {
+			return false
+		}
+		raw, ok := t.Annotations["readOnlyHint"]
+		if !ok {
+			return false
+		}
+		var readOnly bool
+		if err := json.Unmarshal(raw, &readOnly); err != nil {
+			return false
+		}
+		return readOnly
+	}
+	return false
 }

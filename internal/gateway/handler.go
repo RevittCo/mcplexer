@@ -67,7 +67,7 @@ func newHandler(
 		store:          s,
 		engine:         e,
 		manager:        m,
-		sessions:       newSessionManager(s, t),
+		sessions:       newSessionManager(s, e, t),
 		auditor:        a,
 		approvals:      approvals,
 		settingsSvc:    settingsSvc,

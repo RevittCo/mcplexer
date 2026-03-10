@@ -57,8 +57,8 @@ func cmdDryRun(args []string) error {
 	fmt.Printf("    matched_rule:  %s\n", result.MatchedRuleID)
 	fmt.Printf("    downstream:    %s\n", result.DownstreamServerID)
 	fmt.Printf("    auth_scope:    %s\n", result.AuthScopeID)
-	if result.RequiresApproval {
-		fmt.Printf("    approval:      required (timeout=%ds)\n", result.ApprovalTimeout)
+	if result.ApprovalMode != "" && result.ApprovalMode != "none" {
+		fmt.Printf("    approval:      %s (timeout=%ds)\n", result.ApprovalMode, result.ApprovalTimeout)
 	}
 	return nil
 }

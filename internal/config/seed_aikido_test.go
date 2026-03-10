@@ -147,8 +147,8 @@ func TestSeedDefaultRouteRules_EnsuresAikidoRulesWhenRoutesExist(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected aikido mutate route to exist: %v", err)
 	}
-	if !mutate.RequiresApproval {
-		t.Fatalf("aikido mutate requires_approval = %v, want true", mutate.RequiresApproval)
+	if mutate.ApprovalMode != "all" {
+		t.Fatalf("aikido mutate approval_mode = %q, want \"all\"", mutate.ApprovalMode)
 	}
 	if mutate.ApprovalTimeout != 300 {
 		t.Fatalf("aikido mutate approval_timeout = %d, want 300", mutate.ApprovalTimeout)

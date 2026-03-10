@@ -26,7 +26,7 @@ func rrule(id, wsID, pathGlob, policy string, priority int, toolMatch json.RawMe
 // approvalRule builds a RouteRule with approval fields set.
 func approvalRule(id, wsID, pathGlob string, priority int, toolMatch json.RawMessage, dsID string, timeout int) store.RouteRule {
 	r := rrule(id, wsID, pathGlob, "allow", priority, toolMatch, dsID)
-	r.RequiresApproval = true
+	r.ApprovalMode = "all"
 	r.ApprovalTimeout = timeout
 	return r
 }
@@ -286,42 +286,42 @@ func TestIntegration_ApprovalPropagation(t *testing.T) {
 	})
 
 	tests := []struct {
-		name            string
-		subpath, tool   string
-		wantApproval    bool
-		wantTimeout     int
-		wantID          string
-		wantErr         error
+		name             string
+		subpath, tool    string
+		wantApprovalMode string
+		wantTimeout      int
+		wantID           string
+		wantErr          error
 	}{
 		{
 			name: "deploy at root requires approval",
 			subpath: "prod", tool: "deploy__apply",
-			wantApproval: true, wantTimeout: 60, wantID: "deploy-approval",
+			wantApprovalMode: "all", wantTimeout: 60, wantID: "deploy-approval",
 		},
 		{
 			name: "staging deploy no approval (specific override)",
 			subpath: "staging/app", tool: "deploy__apply",
-			wantApproval: false, wantTimeout: 0, wantID: "staging-deploy",
+			wantApprovalMode: "", wantTimeout: 0, wantID: "staging-deploy",
 		},
 		{
 			name: "read tool without approval by default",
 			subpath: "prod", tool: "read__status",
-			wantApproval: false, wantTimeout: 0, wantID: "read-allow",
+			wantApprovalMode: "", wantTimeout: 0, wantID: "read-allow",
 		},
 		{
 			name: "read tool in secrets requires approval",
 			subpath: "secrets/vault", tool: "read__status",
-			wantApproval: true, wantTimeout: 30, wantID: "read-secrets",
+			wantApprovalMode: "all", wantTimeout: 30, wantID: "read-secrets",
 		},
 		{
 			name: "infra tool requires approval with long timeout",
 			subpath: "infra/k8s", tool: "terraform__apply",
-			wantApproval: true, wantTimeout: 300, wantID: "infra-approval",
+			wantApprovalMode: "all", wantTimeout: 300, wantID: "infra-approval",
 		},
 		{
 			name: "infra deploy uses infra rule (more specific path)",
 			subpath: "infra/cd", tool: "deploy__apply",
-			wantApproval: true, wantTimeout: 300, wantID: "infra-approval",
+			wantApprovalMode: "all", wantTimeout: 300, wantID: "infra-approval",
 		},
 		{
 			name: "denied tool has no approval fields",
@@ -339,8 +339,8 @@ func TestIntegration_ApprovalPropagation(t *testing.T) {
 			if tt.wantErr != nil {
 				return
 			}
-			if result.RequiresApproval != tt.wantApproval {
-				t.Errorf("RequiresApproval = %v, want %v", result.RequiresApproval, tt.wantApproval)
+			if result.ApprovalMode != tt.wantApprovalMode {
+				t.Errorf("ApprovalMode = %q, want %q", result.ApprovalMode, tt.wantApprovalMode)
 			}
 			if result.ApprovalTimeout != tt.wantTimeout {
 				t.Errorf("ApprovalTimeout = %d, want %d", result.ApprovalTimeout, tt.wantTimeout)
@@ -371,22 +371,22 @@ func TestIntegration_ApprovalWithFallback(t *testing.T) {
 	}
 
 	tests := []struct {
-		name         string
-		clientRoot   string
-		tool         string
-		wantApproval bool
-		wantTimeout  int
-		wantID       string
+		name             string
+		clientRoot       string
+		tool             string
+		wantApprovalMode string
+		wantTimeout      int
+		wantID           string
 	}{
 		{
 			name: "github matches project with approval",
 			clientRoot: "/home/user/project/src", tool: "github__pr",
-			wantApproval: true, wantTimeout: 120, wantID: "proj-gh-approval",
+			wantApprovalMode: "all", wantTimeout: 120, wantID: "proj-gh-approval",
 		},
 		{
 			name: "slack falls through to org with approval",
 			clientRoot: "/home/user/project/src", tool: "slack__post",
-			wantApproval: true, wantTimeout: 30, wantID: "org-slack-approval",
+			wantApprovalMode: "all", wantTimeout: 30, wantID: "org-slack-approval",
 		},
 	}
 
@@ -401,8 +401,8 @@ func TestIntegration_ApprovalWithFallback(t *testing.T) {
 			if result.MatchedRuleID != tt.wantID {
 				t.Errorf("matched rule = %q, want %q", result.MatchedRuleID, tt.wantID)
 			}
-			if result.RequiresApproval != tt.wantApproval {
-				t.Errorf("RequiresApproval = %v, want %v", result.RequiresApproval, tt.wantApproval)
+			if result.ApprovalMode != tt.wantApprovalMode {
+				t.Errorf("ApprovalMode = %q, want %q", result.ApprovalMode, tt.wantApprovalMode)
 			}
 			if result.ApprovalTimeout != tt.wantTimeout {
 				t.Errorf("ApprovalTimeout = %d, want %d", result.ApprovalTimeout, tt.wantTimeout)

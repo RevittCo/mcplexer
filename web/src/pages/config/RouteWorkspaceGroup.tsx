@@ -141,10 +141,15 @@ export function RouteWorkspaceGroup({
                         </div>
                       </TableCell>
                       <TableCell className="hidden lg:table-cell">
-                        {r.requires_approval ? (
+                        {r.approval_mode === 'all' ? (
                           <Badge variant="outline" className="gap-1 text-amber-400 border-amber-500/30">
                             <ShieldCheck className="h-3 w-3" />
-                            required
+                            all
+                          </Badge>
+                        ) : r.approval_mode === 'write' ? (
+                          <Badge variant="outline" className="gap-1 text-yellow-500 border-yellow-500/30">
+                            <ShieldCheck className="h-3 w-3" />
+                            write only
                           </Badge>
                         ) : (
                           <span className="text-muted-foreground/40">-</span>

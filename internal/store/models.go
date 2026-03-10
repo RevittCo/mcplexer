@@ -91,7 +91,7 @@ type RouteRule struct {
 	AuthScopeID        string          `json:"auth_scope_id"`
 	Policy             string          `json:"policy"`
 	LogLevel           string          `json:"log_level"`
-	RequiresApproval   bool            `json:"requires_approval"`
+	ApprovalMode       string          `json:"approval_mode"`
 	ApprovalTimeout    int             `json:"approval_timeout"`
 	Source             string          `json:"source"`
 	CreatedAt          time.Time       `json:"created_at"`

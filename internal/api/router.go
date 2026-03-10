@@ -67,6 +67,14 @@ func NewRouter(deps RouterDeps) http.Handler {
 	mux.HandleFunc("PUT /api/v1/auth-scopes/{id}", auth.update)
 	mux.HandleFunc("DELETE /api/v1/auth-scopes/{id}", auth.delete)
 
+	if deps.Encryptor != nil {
+		sm := secrets.NewManager(deps.Store, deps.Encryptor)
+		sec := &secretsHandler{manager: sm, store: deps.Store}
+		mux.HandleFunc("GET /api/v1/auth-scopes/{id}/secrets", sec.listKeys)
+		mux.HandleFunc("PUT /api/v1/auth-scopes/{id}/secrets", sec.put)
+		mux.HandleFunc("DELETE /api/v1/auth-scopes/{id}/secrets/{key}", sec.remove)
+	}
+
 	auditH := &auditHandler{store: deps.Store}
 	mux.HandleFunc("GET /api/v1/audit", auditH.query)
 

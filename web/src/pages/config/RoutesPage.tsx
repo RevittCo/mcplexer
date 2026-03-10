@@ -108,7 +108,7 @@ export function RoutesPage() {
       auth_scope_id: r.auth_scope_id,
       policy: r.policy,
       log_level: r.log_level,
-      requires_approval: r.requires_approval ?? false,
+      approval_mode: r.approval_mode ?? 'none',
       approval_timeout: r.approval_timeout ?? 300,
     })
     setSaveError(null)

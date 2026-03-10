@@ -34,7 +34,7 @@ var defaultRouteRules = []store.RouteRule{
 		DownstreamServerID: aikidoServerID,
 		AuthScopeID:        aikidoAuthScopeID,
 		Policy:             "allow",
-		RequiresApproval:   true,
+		ApprovalMode:       "all",
 		ApprovalTimeout:    300,
 		Source:             "default",
 	},

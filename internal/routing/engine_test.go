@@ -45,6 +45,7 @@ func (m *mockRouteStore) ListAuthScopes(context.Context) ([]store.AuthScope, err
 func (m *mockRouteStore) UpdateAuthScope(context.Context, *store.AuthScope) error              { return nil }
 func (m *mockRouteStore) DeleteAuthScope(context.Context, string) error                        { return nil }
 func (m *mockRouteStore) UpdateAuthScopeTokenData(context.Context, string, []byte) error       { return nil }
+func (m *mockRouteStore) UpdateAuthScopeEncryptedData(context.Context, string, []byte) error  { return nil }
 func (m *mockRouteStore) CreateOAuthProvider(context.Context, *store.OAuthProvider) error      { return nil }
 func (m *mockRouteStore) GetOAuthProvider(context.Context, string) (*store.OAuthProvider, error) { return nil, nil }
 func (m *mockRouteStore) GetOAuthProviderByName(context.Context, string) (*store.OAuthProvider, error) { return nil, nil }

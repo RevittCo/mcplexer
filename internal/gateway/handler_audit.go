@@ -49,7 +49,7 @@ func (h *handler) recordAuditWithCache(
 		wsID = route.MatchedWorkspaceID
 		wsName = route.MatchedWorkspaceName
 		subpath = route.Subpath
-	} else if ancestors := h.sessions.workspaceAncestors(); len(ancestors) > 0 {
+	} else if ancestors := h.sessions.workspaceAncestors(ctx); len(ancestors) > 0 {
 		subpath = routing.ComputeSubpath(h.sessions.clientRoot(), ancestors[0].RootPath)
 	}
 
@@ -113,7 +113,7 @@ func (h *handler) recordAuditBlocked(
 		wsID = route.MatchedWorkspaceID
 		wsName = route.MatchedWorkspaceName
 		subpath = route.Subpath
-	} else if ancestors := h.sessions.workspaceAncestors(); len(ancestors) > 0 {
+	} else if ancestors := h.sessions.workspaceAncestors(ctx); len(ancestors) > 0 {
 		subpath = routing.ComputeSubpath(h.sessions.clientRoot(), ancestors[0].RootPath)
 	}
 

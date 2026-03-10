@@ -54,9 +54,9 @@ func TestResolveWorkspaceChain_UsesProcessCWD(t *testing.T) {
 		},
 	}
 
-	// Client reports a completely different root — should be ignored.
-	roots := []Root{{URI: "file:///fake/spoofed/path"}}
-	chain := sm.resolveWorkspaceChain(t.Context(), roots)
+	// In stdio mode, detectClientRoot uses os.Getwd() and ignores reported roots.
+	sm.clientPath = sm.detectClientRoot([]Root{{URI: "file:///fake/spoofed/path"}})
+	chain := sm.resolveChainForPath(t.Context(), sm.clientPath)
 
 	// Should resolve based on actual CWD, not the spoofed root.
 	// The "/" workspace is always an ancestor.
@@ -90,7 +90,8 @@ func TestResolveWorkspaceChain_Ordering(t *testing.T) {
 		},
 	}
 
-	chain := sm.resolveWorkspaceChain(t.Context(), nil)
+	sm.clientPath = sm.detectClientRoot(nil)
+	chain := sm.resolveChainForPath(t.Context(), sm.clientPath)
 
 	// ws-cwd should be first (most specific), ws-global second, ws-unrelated excluded.
 	if len(chain) != 2 {
@@ -111,9 +112,10 @@ func TestResolveWorkspaceChain_NoMatchingWorkspaces(t *testing.T) {
 				{id: "ws-other", rootPath: "/nonexistent/specific/path"},
 			},
 		},
+		clientPath: "/some/other/path",
 	}
 
-	chain := sm.resolveWorkspaceChain(t.Context(), nil)
+	chain := sm.resolveChainForPath(t.Context(), sm.clientPath)
 	if len(chain) != 0 {
 		t.Errorf("expected empty chain, got %v", chain)
 	}
