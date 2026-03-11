@@ -148,6 +148,15 @@ func (h *handler) handleSearchTools(ctx context.Context, query, namespace string
 		}
 	}
 
+	// Include addon tools in search results.
+	if h.addonRegistry != nil {
+		for _, t := range addonToolDefinitions(h.addonRegistry) {
+			if matchesQuery(t, queryLower) {
+				matches = append(matches, t)
+			}
+		}
+	}
+
 	// Sort by relevance before filtering/capping.
 	sort.Slice(matches, func(i, j int) bool {
 		return scoreMatch(matches[i], queryLower) > scoreMatch(matches[j], queryLower)

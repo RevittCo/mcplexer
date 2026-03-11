@@ -258,7 +258,7 @@ func newTestHandler(lister ToolLister, servers []store.DownstreamServer) (*handl
 		},
 	}
 	engine := routing.NewEngine(ms)
-	h := newHandler(ms, engine, lister, nil, TransportSocket, nil, nil)
+	h := newHandler(ms, engine, lister, nil, TransportSocket, nil, nil, nil, nil)
 	// Bind session to the global workspace so tool filtering passes.
 	h.sessions.clientPath = "/test"
 	h.sessions.wsChain = []routing.WorkspaceAncestor{{ID: "ws-global", RootPath: "/"}}
@@ -799,6 +799,8 @@ func TestHandleToolsList_CodexCompatIncludesDynamicTools(t *testing.T) {
 		TransportSocket,
 		nil,
 		config.NewSettingsService(ms),
+		nil,
+		nil,
 	)
 	h.sessions.clientPath = "/test"
 	h.sessions.wsChain = []routing.WorkspaceAncestor{{ID: "ws-global", RootPath: "/"}}
@@ -864,6 +866,8 @@ func TestHandleToolsList_CodexCompatDisabledHidesDynamicTools(t *testing.T) {
 		TransportSocket,
 		nil,
 		config.NewSettingsService(ms),
+		nil,
+		nil,
 	)
 	h.sessions.clientPath = "/test"
 	h.sessions.wsChain = []routing.WorkspaceAncestor{{ID: "ws-global", RootPath: "/"}}
@@ -924,6 +928,8 @@ func TestHandleToolsList_CodexCompatSkipsNonCodexClients(t *testing.T) {
 		TransportSocket,
 		nil,
 		config.NewSettingsService(ms),
+		nil,
+		nil,
 	)
 	h.sessions.clientPath = "/test"
 	h.sessions.wsChain = []routing.WorkspaceAncestor{{ID: "ws-global", RootPath: "/"}}
@@ -962,7 +968,7 @@ func TestHandleToolsCall_GitHubRepoAllowlistBlocksDisallowedRepo(t *testing.T) {
 		},
 	}
 
-	h := newHandler(ms, routing.NewEngine(ms), lister, nil, TransportSocket, nil, nil)
+	h := newHandler(ms, routing.NewEngine(ms), lister, nil, TransportSocket, nil, nil, nil, nil)
 	h.sessions.clientPath = "/test"
 	h.sessions.wsChain = []routing.WorkspaceAncestor{{ID: "ws-global", RootPath: "/"}}
 
@@ -1002,7 +1008,7 @@ func TestHandleToolsCall_GitHubRepoAllowlistAllowsConfiguredRepo(t *testing.T) {
 		},
 	}
 
-	h := newHandler(ms, routing.NewEngine(ms), lister, nil, TransportSocket, nil, nil)
+	h := newHandler(ms, routing.NewEngine(ms), lister, nil, TransportSocket, nil, nil, nil, nil)
 	h.sessions.clientPath = "/test"
 	h.sessions.wsChain = []routing.WorkspaceAncestor{{ID: "ws-global", RootPath: "/"}}
 

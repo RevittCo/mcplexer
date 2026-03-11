@@ -177,6 +177,12 @@ func (h *handler) gatherAllTools(ctx context.Context) ([]Tool, error) {
 		}
 		all = append(all, tools...)
 	}
+
+	// Include addon tools so they are discoverable via load_tools.
+	if h.addonRegistry != nil {
+		all = append(all, addonToolDefinitions(h.addonRegistry)...)
+	}
+
 	return all, nil
 }
 

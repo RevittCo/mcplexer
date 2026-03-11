@@ -8,9 +8,11 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
+	"github.com/revittco/mcplexer/internal/addon"
 	"github.com/revittco/mcplexer/internal/api"
 	"github.com/revittco/mcplexer/internal/approval"
 	"github.com/revittco/mcplexer/internal/audit"
@@ -134,6 +136,8 @@ func runHTTP(ctx context.Context, cfg *Config, db *sqlite.DB, cfgSvc *config.Ser
 		slog.Warn("mcp install manager unavailable", "error", err)
 	}
 
+	addonReg, _ := loadAddons(ctx, cfg, db, authInj)
+
 	auditBus := audit.NewBus()
 	router := api.NewRouter(api.RouterDeps{
 		Store:           db,
@@ -148,6 +152,7 @@ func runHTTP(ctx context.Context, cfg *Config, db *sqlite.DB, cfgSvc *config.Ser
 		ApprovalBus:     approvalBus,
 		ToolCache:       tc,
 		InstallManager:  installMgr,
+		AddonRegistry:   addonReg,
 	})
 
 	srv := &http.Server{
@@ -196,10 +201,17 @@ func runStdio(ctx context.Context, cfg *Config, db *sqlite.DB, settingsSvc *conf
 	approvalMgr.ExpireStale(ctx)
 	defer approvalMgr.Shutdown()
 
+	addonReg, addonExec := loadAddons(ctx, cfg, db, authInj)
+
 	auditor := audit.NewLogger(db, db, nil)
-	gw := gateway.NewServer(db, engine, lister, auditor, gateway.TransportStdio,
+	gwOpts := []gateway.ServerOption{
 		gateway.WithApprovals(approvalMgr),
-		gateway.WithSettings(settingsSvc))
+		gateway.WithSettings(settingsSvc),
+	}
+	if addonReg != nil {
+		gwOpts = append(gwOpts, gateway.WithAddons(addonReg, addonExec))
+	}
+	gw := gateway.NewServer(db, engine, lister, auditor, gateway.TransportStdio, gwOpts...)
 
 	manager.OnToolsChanged = gw.InvalidateAndNotifyToolsChanged
 
@@ -229,6 +241,36 @@ func buildToolCache(ctx context.Context, db *sqlite.DB) *cache.ToolCache {
 	}
 
 	return cache.NewToolCache(configs)
+}
+
+// loadAddons loads addon YAML files from the addons/ directory next to the DB.
+// Returns nil, nil if no addons directory exists or loading fails (non-fatal).
+func loadAddons(ctx context.Context, cfg *Config, db *sqlite.DB, authInj *auth.Injector) (*addon.Registry, *addon.Executor) {
+	addonDir := filepath.Join(filepath.Dir(cfg.DBDSN), "addons")
+	if _, err := os.Stat(addonDir); err != nil {
+		return nil, nil
+	}
+
+	resolver := func(serverID string) (string, error) {
+		srv, err := db.GetDownstreamServer(ctx, serverID)
+		if err != nil {
+			return "", err
+		}
+		return srv.ToolNamespace, nil
+	}
+
+	reg, err := addon.LoadDir(addonDir, resolver)
+	if err != nil {
+		slog.Warn("failed to load addons", "dir", addonDir, "error", err)
+		return nil, nil
+	}
+
+	if len(reg.AllTools()) == 0 {
+		return nil, nil
+	}
+
+	exec := addon.NewExecutor(authInj.HeadersForDownstream)
+	return reg, exec
 }
 
 // buildAuthInjector creates an auth.Injector and optionally an oauth.FlowManager.
@@ -293,6 +335,8 @@ func runHTTPAndSocket(ctx context.Context, cfg *Config, db *sqlite.DB, cfgSvc *c
 	approvalMgr.ExpireStale(ctx)
 	defer approvalMgr.Shutdown()
 
+	addonReg, addonExec := loadAddons(ctx, cfg, db, authInj)
+
 	installMgr2, err := mcpinstall.New()
 	if err != nil {
 		slog.Warn("mcp install manager unavailable", "error", err)
@@ -317,6 +361,7 @@ func runHTTPAndSocket(ctx context.Context, cfg *Config, db *sqlite.DB, cfgSvc *c
 			ApprovalBus:     approvalBus,
 			ToolCache:       tc,
 			InstallManager:  installMgr2,
+			AddonRegistry:   addonReg,
 		})
 		srv := &http.Server{Addr: cfg.HTTPAddr, Handler: router}
 		srv.ReadHeaderTimeout = 10 * time.Second
@@ -342,7 +387,7 @@ func runHTTPAndSocket(ctx context.Context, cfg *Config, db *sqlite.DB, cfgSvc *c
 
 	// Unix socket listener
 	g.Go(func() error {
-		return runSocket(ctx, cfg.SocketPath, db, engine, lister, auditor, approvalMgr, settingsSvc)
+		return runSocket(ctx, cfg.SocketPath, db, engine, lister, auditor, approvalMgr, settingsSvc, addonReg, addonExec)
 	})
 
 	return g.Wait()

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/revittco/mcplexer/internal/addon"
 	"github.com/revittco/mcplexer/internal/approval"
 	"github.com/revittco/mcplexer/internal/audit"
 	"github.com/revittco/mcplexer/internal/cache"
@@ -32,6 +33,7 @@ type RouterDeps struct {
 	ApprovalBus     *approval.Bus         // optional; enables approval SSE stream
 	ToolCache       *cache.ToolCache      // optional; enables cache stats/flush API
 	InstallManager  *mcpinstall.Manager   // optional; enables MCP install endpoints
+	AddonRegistry   *addon.Registry       // optional; enables addon tools in discovery
 }
 
 // NewRouter creates an http.Handler with all API routes and SPA fallback.
@@ -136,7 +138,7 @@ func NewRouter(deps RouterDeps) http.Handler {
 		mux.HandleFunc("PUT /api/v1/settings", sh.update)
 	}
 
-	disc := &discoverHandler{manager: deps.Manager, store: deps.Store}
+	disc := &discoverHandler{manager: deps.Manager, store: deps.Store, addonReg: deps.AddonRegistry}
 	mux.HandleFunc("POST /api/v1/downstreams/{id}/discover", disc.discover)
 
 	if deps.FlowManager != nil {

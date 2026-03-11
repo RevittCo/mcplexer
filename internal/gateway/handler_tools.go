@@ -104,6 +104,11 @@ func (h *handler) handleToolsList(
 		}
 	}
 
+	// Inject addon tools (from YAML definitions that bridge MCP server gaps).
+	if h.addonRegistry != nil {
+		tools = append(tools, addonToolDefinitions(h.addonRegistry)...)
+	}
+
 	// For dynamic servers, only include tools explicitly loaded via load_tools.
 	activeTools := h.sessions.getActiveTools()
 	tools = append(tools, activeTools...)
@@ -269,6 +274,26 @@ func (h *handler) handleToolsCall(
 				return result, rpcErr
 			}
 			// Approval granted — fall through to dispatch.
+		}
+	}
+
+	// Intercept addon tool calls — execute as direct REST API calls
+	// instead of forwarding to the downstream MCP server.
+	if h.addonRegistry != nil && h.addonExecutor != nil {
+		if addonTool := h.addonRegistry.GetTool(req.Name); addonTool != nil {
+			result, callErr := h.addonExecutor.Execute(
+				ctx, addonTool, routeResult.AuthScopeID, req.Arguments,
+			)
+			if callErr != nil {
+				rpcErr := &RPCError{
+					Code:    CodeProcessError,
+					Message: fmt.Sprintf("addon %s: %v", req.Name, callErr),
+				}
+				h.recordAudit(ctx, req.Name, req.Arguments, routeResult, nil, rpcErr, start)
+				return nil, rpcErr
+			}
+			h.recordAudit(ctx, req.Name, req.Arguments, routeResult, result, nil, start)
+			return result, nil
 		}
 	}
 

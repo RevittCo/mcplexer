@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/revittco/mcplexer/internal/addon"
 	"github.com/revittco/mcplexer/internal/approval"
 	"github.com/revittco/mcplexer/internal/audit"
 	"github.com/revittco/mcplexer/internal/cache"
@@ -40,6 +41,8 @@ type handler struct {
 	settingsSvc    *config.SettingsService
 	toolsListCache *cache.Cache[string, json.RawMessage]
 	notifier       Notifier // set at runtime for sending notifications
+	addonRegistry  *addon.Registry // nil = no addons loaded
+	addonExecutor  *addon.Executor // nil = no addons loaded
 }
 
 // setNotifier sets the notifier for sending client notifications.
@@ -55,6 +58,8 @@ func newHandler(
 	t TransportMode,
 	approvals *approval.Manager,
 	settingsSvc *config.SettingsService,
+	addonReg *addon.Registry,
+	addonExec *addon.Executor,
 ) *handler {
 	ttl := 15 * time.Second
 	if settingsSvc != nil {
@@ -72,6 +77,8 @@ func newHandler(
 		approvals:      approvals,
 		settingsSvc:    settingsSvc,
 		toolsListCache: cache.New[string, json.RawMessage](10, ttl),
+		addonRegistry:  addonReg,
+		addonExecutor:  addonExec,
 	}
 }
 

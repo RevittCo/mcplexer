@@ -10,6 +10,7 @@ import (
 	"os"
 	"sync"
 
+	"github.com/revittco/mcplexer/internal/addon"
 	"github.com/revittco/mcplexer/internal/approval"
 	"github.com/revittco/mcplexer/internal/audit"
 	"github.com/revittco/mcplexer/internal/cache"
@@ -44,14 +45,16 @@ func NewServer(
 		o.apply(&sopts)
 	}
 	return &Server{
-		handler: newHandler(s, engine, manager, auditor, transport, sopts.approvals, sopts.settingsSvc),
+		handler: newHandler(s, engine, manager, auditor, transport, sopts.approvals, sopts.settingsSvc, sopts.addonRegistry, sopts.addonExecutor),
 	}
 }
 
 // serverOptions holds optional configuration applied via ServerOption.
 type serverOptions struct {
-	approvals   *approval.Manager
-	settingsSvc *config.SettingsService
+	approvals     *approval.Manager
+	settingsSvc   *config.SettingsService
+	addonRegistry *addon.Registry
+	addonExecutor *addon.Executor
 }
 
 // ServerOption configures optional server features.
@@ -72,6 +75,21 @@ func (o withSettings) apply(opts *serverOptions) { opts.settingsSvc = o.s }
 
 // WithSettings provides the settings service to the gateway handler.
 func WithSettings(s *config.SettingsService) ServerOption { return withSettings{s} }
+
+type withAddons struct {
+	r *addon.Registry
+	e *addon.Executor
+}
+
+func (o withAddons) apply(opts *serverOptions) {
+	opts.addonRegistry = o.r
+	opts.addonExecutor = o.e
+}
+
+// WithAddons enables addon tools that bridge gaps in downstream MCP servers.
+func WithAddons(r *addon.Registry, e *addon.Executor) ServerOption {
+	return withAddons{r: r, e: e}
+}
 
 // RunStdio runs the MCP server over stdio (stdin/stdout).
 func (s *Server) RunStdio(ctx context.Context) error {

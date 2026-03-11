@@ -1,0 +1,447 @@
+# ClickUp Chat API v3 addon
+# Bridges gaps in the official ClickUp MCP server by exposing Chat endpoints.
+# Ref: https://developer.clickup.com/reference/getchatmessages
+
+parent_server: clickup
+
+tools:
+  # ── Channels ──────────────────────────────────────────────────────────
+
+  - name: get_chat_channels
+    description: "List Chat Channels in a Workspace. Supports filtering by type, follower status, and recency. Returns paginated results (default 50, max 100)."
+    method: GET
+    url: "https://api.clickup.com/api/v3/workspaces/{{workspace_id}}/chat/channels"
+    query_params:
+      description_format: "{{description_format}}"
+      cursor: "{{cursor}}"
+      limit: "{{limit}}"
+      is_follower: "{{is_follower}}"
+      include_closed: "{{include_closed}}"
+      with_message_since: "{{with_message_since}}"
+      channel_types: "{{channel_types}}"
+    input_schema:
+      type: object
+      properties:
+        workspace_id:
+          type: string
+          description: "The Workspace ID."
+        description_format:
+          type: string
+          description: "Format of Channel descriptions. Default: text/md."
+          enum: ["text/md", "text/plain"]
+        cursor:
+          type: string
+          description: "Cursor for pagination."
+        limit:
+          type: integer
+          description: "Max results per page (1-100, default 50)."
+        is_follower:
+          type: boolean
+          description: "Only return Channels the user follows."
+        include_closed:
+          type: boolean
+          description: "Include DMs/Group DMs that have been explicitly closed."
+        with_message_since:
+          type: number
+          description: "Only return Channels with a message since this timestamp (ms)."
+        channel_types:
+          type: string
+          description: "Filter by Channel type (CHANNEL, DM, GROUP_DM)."
+      required: [workspace_id]
+    annotations:
+      readOnlyHint: true
+      destructiveHint: false
+
+  - name: get_chat_channel
+    description: "Retrieve details of a specific Chat Channel by its ID, including name, description, topic, type, visibility, and member counts."
+    method: GET
+    url: "https://api.clickup.com/api/v3/workspaces/{{workspace_id}}/chat/channels/{{channel_id}}"
+    query_params:
+      description_format: "{{description_format}}"
+    input_schema:
+      type: object
+      properties:
+        workspace_id:
+          type: string
+          description: "The Workspace ID."
+        channel_id:
+          type: string
+          description: "The Channel ID."
+        description_format:
+          type: string
+          description: "Format of the Channel description. Default: text/md."
+          enum: ["text/md", "text/plain"]
+      required: [workspace_id, channel_id]
+    annotations:
+      readOnlyHint: true
+      destructiveHint: false
+
+  - name: get_chat_channel_members
+    description: "Retrieve members of a Chat Channel. Returns paginated user list with cursor-based pagination (default 50 per page)."
+    method: GET
+    url: "https://api.clickup.com/api/v3/workspaces/{{workspace_id}}/chat/channels/{{channel_id}}/members"
+    query_params:
+      cursor: "{{cursor}}"
+      limit: "{{limit}}"
+    input_schema:
+      type: object
+      properties:
+        workspace_id:
+          type: string
+          description: "The Workspace ID."
+        channel_id:
+          type: string
+          description: "The Channel ID."
+        cursor:
+          type: string
+          description: "Cursor for pagination."
+        limit:
+          type: integer
+          description: "Max results per page (default 50)."
+      required: [workspace_id, channel_id]
+    annotations:
+      readOnlyHint: true
+      destructiveHint: false
+
+  - name: get_chat_channel_followers
+    description: "Retrieve followers of a Chat Channel. Returns paginated user list."
+    method: GET
+    url: "https://api.clickup.com/api/v3/workspaces/{{workspace_id}}/chat/channels/{{channel_id}}/followers"
+    query_params:
+      cursor: "{{cursor}}"
+      limit: "{{limit}}"
+    input_schema:
+      type: object
+      properties:
+        workspace_id:
+          type: string
+          description: "The Workspace ID."
+        channel_id:
+          type: string
+          description: "The Channel ID."
+        cursor:
+          type: string
+          description: "Cursor for pagination."
+        limit:
+          type: integer
+          description: "Max results per page (default 50)."
+      required: [workspace_id, channel_id]
+    annotations:
+      readOnlyHint: true
+      destructiveHint: false
+
+  # ── Messages ──────────────────────────────────────────────────────────
+
+  - name: get_chat_messages
+    description: "Retrieve messages from a Chat Channel. Returns paginated messages with content, author, timestamps, and reactions. Use cursor for older messages."
+    method: GET
+    url: "https://api.clickup.com/api/v3/workspaces/{{workspace_id}}/chat/channels/{{channel_id}}/messages"
+    query_params:
+      cursor: "{{cursor}}"
+      limit: "{{limit}}"
+      content_format: "{{content_format}}"
+    input_schema:
+      type: object
+      properties:
+        workspace_id:
+          type: string
+          description: "The Workspace ID."
+        channel_id:
+          type: string
+          description: "The Channel ID to retrieve messages from."
+        cursor:
+          type: string
+          description: "Cursor for pagination (fetch older messages)."
+        limit:
+          type: integer
+          description: "Max messages per page (default 50)."
+        content_format:
+          type: string
+          description: "Format of message content. Default: text/md."
+          enum: ["text/md", "text/plain"]
+      required: [workspace_id, channel_id]
+    annotations:
+      readOnlyHint: true
+      destructiveHint: false
+
+  - name: send_chat_message
+    description: "Send a top-level message to a Chat Channel. Supports markdown content, message or post type, reactions, and followers."
+    method: POST
+    url: "https://api.clickup.com/api/v3/workspaces/{{workspace_id}}/chat/channels/{{channel_id}}/messages"
+    input_schema:
+      type: object
+      properties:
+        workspace_id:
+          type: string
+          description: "The Workspace ID."
+        channel_id:
+          type: string
+          description: "The Channel ID to send the message to."
+        type:
+          type: string
+          description: "The type of message."
+          enum: ["message", "post"]
+        content:
+          type: string
+          description: "The message content (markdown supported)."
+        content_format:
+          type: string
+          description: "Format of the content field. Default: text/md."
+          enum: ["text/md", "text/plain"]
+        assignee:
+          type: string
+          description: "User ID to assign to the message."
+        followers:
+          type: array
+          description: "User IDs to follow the message."
+          items:
+            type: string
+      required: [workspace_id, channel_id, type, content]
+    annotations:
+      readOnlyHint: false
+      destructiveHint: false
+
+  - name: update_chat_message
+    description: "Update an existing Chat message. Can change content, assignee, resolved status, or post data."
+    method: PATCH
+    url: "https://api.clickup.com/api/v3/workspaces/{{workspace_id}}/chat/messages/{{message_id}}"
+    input_schema:
+      type: object
+      properties:
+        workspace_id:
+          type: string
+          description: "The Workspace ID."
+        message_id:
+          type: string
+          description: "The message ID to update."
+        content:
+          type: string
+          description: "Updated message content."
+        content_format:
+          type: string
+          description: "Format of the content field. Default: text/md."
+          enum: ["text/md", "text/plain"]
+        assignee:
+          type: string
+          description: "Updated assignee user ID."
+        resolved:
+          type: boolean
+          description: "Set the resolved status of the message."
+      required: [workspace_id, message_id]
+    annotations:
+      readOnlyHint: false
+      destructiveHint: false
+      idempotentHint: true
+
+  - name: delete_chat_message
+    description: "Delete a Chat message permanently."
+    method: DELETE
+    url: "https://api.clickup.com/api/v3/workspaces/{{workspace_id}}/chat/messages/{{message_id}}"
+    body_mapping: none
+    input_schema:
+      type: object
+      properties:
+        workspace_id:
+          type: string
+          description: "The Workspace ID."
+        message_id:
+          type: string
+          description: "The message ID to delete."
+      required: [workspace_id, message_id]
+    annotations:
+      readOnlyHint: false
+      destructiveHint: true
+
+  # ── Replies ───────────────────────────────────────────────────────────
+
+  - name: get_chat_message_replies
+    description: "Retrieve threaded replies to a specific message. Returns paginated reply list."
+    method: GET
+    url: "https://api.clickup.com/api/v3/workspaces/{{workspace_id}}/chat/messages/{{message_id}}/replies"
+    query_params:
+      cursor: "{{cursor}}"
+      limit: "{{limit}}"
+      content_format: "{{content_format}}"
+    input_schema:
+      type: object
+      properties:
+        workspace_id:
+          type: string
+          description: "The Workspace ID."
+        message_id:
+          type: string
+          description: "The parent message ID."
+        cursor:
+          type: string
+          description: "Cursor for pagination."
+        limit:
+          type: integer
+          description: "Max replies per page (default 50)."
+        content_format:
+          type: string
+          description: "Format of reply content. Default: text/md."
+          enum: ["text/md", "text/plain"]
+      required: [workspace_id, message_id]
+    annotations:
+      readOnlyHint: true
+      destructiveHint: false
+
+  - name: send_chat_reply
+    description: "Send a threaded reply to a specific message. Supports markdown content and follower assignment."
+    method: POST
+    url: "https://api.clickup.com/api/v3/workspaces/{{workspace_id}}/chat/messages/{{message_id}}/replies"
+    input_schema:
+      type: object
+      properties:
+        workspace_id:
+          type: string
+          description: "The Workspace ID."
+        message_id:
+          type: string
+          description: "The parent message ID to reply to."
+        type:
+          type: string
+          description: "The type of reply."
+          enum: ["message", "post"]
+        content:
+          type: string
+          description: "The reply content (markdown supported)."
+        content_format:
+          type: string
+          description: "Format of the content field. Default: text/md."
+          enum: ["text/md", "text/plain"]
+        assignee:
+          type: string
+          description: "User ID to assign to the reply."
+        followers:
+          type: array
+          description: "User IDs to follow the reply."
+          items:
+            type: string
+      required: [workspace_id, message_id, type, content]
+    annotations:
+      readOnlyHint: false
+      destructiveHint: false
+
+  # ── Reactions ─────────────────────────────────────────────────────────
+
+  - name: get_chat_message_reactions
+    description: "Retrieve reactions on a specific message. Returns paginated list of emoji reactions and the users who reacted."
+    method: GET
+    url: "https://api.clickup.com/api/v3/workspaces/{{workspace_id}}/chat/messages/{{message_id}}/reactions"
+    query_params:
+      cursor: "{{cursor}}"
+      limit: "{{limit}}"
+    input_schema:
+      type: object
+      properties:
+        workspace_id:
+          type: string
+          description: "The Workspace ID."
+        message_id:
+          type: string
+          description: "The message ID."
+        cursor:
+          type: string
+          description: "Cursor for pagination."
+        limit:
+          type: integer
+          description: "Max results per page (default 50)."
+      required: [workspace_id, message_id]
+    annotations:
+      readOnlyHint: true
+      destructiveHint: false
+
+  - name: create_chat_reaction
+    description: "Add an emoji reaction to a message. Use lowercase emoji names (e.g. 'thumbsup', 'heart', 'eyes')."
+    method: POST
+    url: "https://api.clickup.com/api/v3/workspaces/{{workspace_id}}/chat/messages/{{message_id}}/reactions"
+    input_schema:
+      type: object
+      properties:
+        workspace_id:
+          type: string
+          description: "The Workspace ID."
+        message_id:
+          type: string
+          description: "The message ID to react to."
+        reaction:
+          type: string
+          description: "Lowercase emoji name (e.g. 'thumbsup', 'heart', 'tada')."
+      required: [workspace_id, message_id, reaction]
+    annotations:
+      readOnlyHint: false
+      destructiveHint: false
+
+  - name: delete_chat_reaction
+    description: "Remove an emoji reaction from a message."
+    method: DELETE
+    url: "https://api.clickup.com/api/v3/workspaces/{{workspace_id}}/chat/messages/{{message_id}}/reactions/{{reaction}}"
+    body_mapping: none
+    input_schema:
+      type: object
+      properties:
+        workspace_id:
+          type: string
+          description: "The Workspace ID."
+        message_id:
+          type: string
+          description: "The message ID."
+        reaction:
+          type: string
+          description: "The emoji name to remove."
+      required: [workspace_id, message_id, reaction]
+    annotations:
+      readOnlyHint: false
+      destructiveHint: true
+
+  # ── Tagged Users ──────────────────────────────────────────────────────
+
+  - name: get_chat_message_tagged_users
+    description: "Retrieve users tagged/mentioned in a specific message."
+    method: GET
+    url: "https://api.clickup.com/api/v3/workspaces/{{workspace_id}}/chat/messages/{{message_id}}/tagged_users"
+    query_params:
+      cursor: "{{cursor}}"
+      limit: "{{limit}}"
+    input_schema:
+      type: object
+      properties:
+        workspace_id:
+          type: string
+          description: "The Workspace ID."
+        message_id:
+          type: string
+          description: "The message ID."
+        cursor:
+          type: string
+          description: "Cursor for pagination."
+        limit:
+          type: integer
+          description: "Max results per page (default 50)."
+      required: [workspace_id, message_id]
+    annotations:
+      readOnlyHint: true
+      destructiveHint: false
+
+  # ── Post Subtypes ─────────────────────────────────────────────────────
+
+  - name: get_post_subtypes
+    description: "Get Post Subtype IDs (Announcement, Discussion, Idea, Update) for a Workspace. Required when sending messages with type 'post'."
+    method: GET
+    url: "https://api.clickup.com/api/v3/workspaces/{{workspace_id}}/comments/types/{{comment_type}}/subtypes"
+    body_mapping: none
+    input_schema:
+      type: object
+      properties:
+        workspace_id:
+          type: string
+          description: "The Workspace ID."
+        comment_type:
+          type: string
+          description: "The comment type to get subtypes for."
+          enum: ["post", "ai", "syncup", "ai_via_brain"]
+      required: [workspace_id, comment_type]
+    annotations:
+      readOnlyHint: true
+      destructiveHint: false
