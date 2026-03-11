@@ -86,7 +86,7 @@ function writeConfig(configPath: string): void {
   const servers = (cfg.mcpServers as Record<string, unknown>) ?? {};
   servers[SERVER_NAME] = {
     command: getStableBinaryPath(),
-    args: ["connect", `--socket=${path.join(os.tmpdir(), "mcplexer.sock")}`],
+    args: ["connect", "--socket=/tmp/mcplexer.sock"],
   };
   delete servers[LEGACY_SERVER_NAME];
   cfg.mcpServers = servers;

@@ -1,5 +1,5 @@
 import { app, BrowserWindow, shell } from "electron";
-import { ChildProcess, spawn } from "node:child_process";
+import { ChildProcess, spawn, execFileSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 import { findFreePort } from "./utils/port-finder.js";
@@ -98,9 +98,32 @@ function createWindow(): void {
   });
 }
 
+function stopCliDaemon(): void {
+  const plistPath = path.join(os.homedir(), "Library/LaunchAgents/com.mcplexer.daemon.plist");
+  try {
+    execFileSync("launchctl", ["unload", plistPath], { stdio: "ignore" });
+    console.log("[mcplexer] Stopped CLI daemon to avoid socket conflicts");
+  } catch {
+    // Not loaded or not present — fine
+  }
+}
+
+function startCliDaemon(): void {
+  const plistPath = path.join(os.homedir(), "Library/LaunchAgents/com.mcplexer.daemon.plist");
+  try {
+    execFileSync("launchctl", ["load", plistPath], { stdio: "ignore" });
+    console.log("[mcplexer] Restarted CLI daemon");
+  } catch {
+    // Plist not present — fine
+  }
+}
+
+// Well-known socket path that MCP clients (Claude, Cursor, etc.) connect to.
+const SOCKET_PATH = "/tmp/mcplexer.sock";
+
 function spawnGoServer(port: number): ChildProcess {
   const binaryPath = getGoBinaryPath();
-  const socketPath = path.join(os.tmpdir(), "mcplexer.sock");
+  const socketPath = SOCKET_PATH;
   const listenAddr = `127.0.0.1:${port}`;
   console.log(`[mcplexer] Starting Go server: ${binaryPath} serve --mode=http --addr=${listenAddr} --socket=${socketPath}`);
 
@@ -175,6 +198,9 @@ async function startApp(): Promise<void> {
     initTray();
     setTrayStatus("starting");
 
+    // Stop the CLI daemon so the Electron-managed server owns the socket.
+    stopCliDaemon();
+
     serverPort = await findFreePort();
     console.log(`[mcplexer] Using port ${serverPort}`);
 
@@ -231,5 +257,8 @@ app.on("window-all-closed", () => {
 
 app.on("before-quit", () => {
   isQuitting = true;
-  void shutdownGoProcess();
+  void shutdownGoProcess().then(() => {
+    // Re-enable the CLI daemon so it takes over the socket when Electron exits.
+    startCliDaemon();
+  });
 });
