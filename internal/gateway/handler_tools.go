@@ -284,8 +284,13 @@ func (h *handler) handleToolsCall(
 	// instead of forwarding to the downstream MCP server.
 	if h.addonRegistry != nil && h.addonExecutor != nil {
 		if addonTool := h.addonRegistry.GetTool(req.Name); addonTool != nil {
+			// Use the addon's own auth scope if configured, otherwise fall back to route's.
+			addonAuthScope := routeResult.AuthScopeID
+			if addonTool.AuthScopeID != "" {
+				addonAuthScope = addonTool.AuthScopeID
+			}
 			result, callErr := h.addonExecutor.Execute(
-				ctx, addonTool, routeResult.AuthScopeID, req.Arguments,
+				ctx, addonTool, addonAuthScope, req.Arguments,
 			)
 			if callErr != nil {
 				rpcErr := &RPCError{

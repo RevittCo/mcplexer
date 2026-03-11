@@ -3,6 +3,7 @@
 # Ref: https://developer.clickup.com/reference/getchatmessages
 
 parent_server: clickup
+auth_scope: "Clickup Revitt MCPlexer"
 
 tools:
   # ── Channels ──────────────────────────────────────────────────────────

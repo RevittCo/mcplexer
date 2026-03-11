@@ -3,6 +3,7 @@ package addon
 // AddonFile represents a YAML addon definition file.
 type AddonFile struct {
 	ParentServer string    `yaml:"parent_server"` // ID of the downstream server to inherit auth from
+	AuthScope    string    `yaml:"auth_scope"`    // optional: auth scope name for addon HTTP calls (overrides route's scope)
 	Tools        []ToolDef `yaml:"tools"`
 }
 
@@ -32,4 +33,5 @@ type ResolvedTool struct {
 	ParentServerID string
 	Namespace      string // e.g., "clickup"
 	FullName       string // e.g., "clickup__get_chat_messages"
+	AuthScopeID    string // resolved from auth_scope name; empty = use route's scope
 }

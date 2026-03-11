@@ -259,7 +259,21 @@ func loadAddons(ctx context.Context, cfg *Config, db *sqlite.DB, authInj *auth.I
 		return srv.ToolNamespace, nil
 	}
 
-	reg, err := addon.LoadDir(addonDir, resolver)
+	// Resolve auth_scope names to IDs so addon tools can use their own auth.
+	authScopeResolver := func(scopeName string) string {
+		scopes, err := db.ListAuthScopes(ctx)
+		if err != nil {
+			return ""
+		}
+		for _, s := range scopes {
+			if s.Name == scopeName {
+				return s.ID
+			}
+		}
+		return ""
+	}
+
+	reg, err := addon.LoadDir(addonDir, resolver, addon.WithAuthScopeResolver(authScopeResolver))
 	if err != nil {
 		slog.Warn("failed to load addons", "dir", addonDir, "error", err)
 		return nil, nil

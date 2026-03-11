@@ -21,12 +21,21 @@ type Registry struct {
 // NamespaceResolver maps a parent_server ID to its tool namespace.
 type NamespaceResolver func(serverID string) (string, error)
 
+// AuthScopeResolver maps an auth scope name to its ID. Returns "" if not found.
+type AuthScopeResolver func(scopeName string) string
+
 // LoadDir reads all *.yaml files from dir, parses them, resolves parent
 // servers to namespaces, and returns a populated Registry.
-func LoadDir(dir string, resolve NamespaceResolver) (*Registry, error) {
+// Use WithAuthScopeResolver to enable auth_scope name resolution.
+func LoadDir(dir string, resolve NamespaceResolver, opts ...LoadOption) (*Registry, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, fmt.Errorf("read addon dir: %w", err)
+	}
+
+	var cfg loadConfig
+	for _, o := range opts {
+		o(&cfg)
 	}
 
 	r := &Registry{
@@ -39,7 +48,7 @@ func LoadDir(dir string, resolve NamespaceResolver) (*Registry, error) {
 			continue
 		}
 		path := filepath.Join(dir, entry.Name())
-		if err := r.loadFile(path, resolve); err != nil {
+		if err := r.loadFile(path, resolve, cfg.authScopeResolver); err != nil {
 			return nil, fmt.Errorf("load %s: %w", entry.Name(), err)
 		}
 	}
@@ -48,12 +57,25 @@ func LoadDir(dir string, resolve NamespaceResolver) (*Registry, error) {
 	return r, nil
 }
 
+// loadConfig holds optional configuration for LoadDir.
+type loadConfig struct {
+	authScopeResolver AuthScopeResolver
+}
+
+// LoadOption configures LoadDir behavior.
+type LoadOption func(*loadConfig)
+
+// WithAuthScopeResolver enables auth_scope name → ID resolution.
+func WithAuthScopeResolver(r AuthScopeResolver) LoadOption {
+	return func(c *loadConfig) { c.authScopeResolver = r }
+}
+
 func isYAML(name string) bool {
 	ext := strings.ToLower(filepath.Ext(name))
 	return ext == ".yaml" || ext == ".yml"
 }
 
-func (r *Registry) loadFile(path string, resolve NamespaceResolver) error {
+func (r *Registry) loadFile(path string, resolve NamespaceResolver, resolveAuth AuthScopeResolver) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf("read file: %w", err)
@@ -73,6 +95,16 @@ func (r *Registry) loadFile(path string, resolve NamespaceResolver) error {
 		return fmt.Errorf("resolve parent_server %q: %w", af.ParentServer, err)
 	}
 
+	// Resolve auth_scope name to ID if specified.
+	var authScopeID string
+	if af.AuthScope != "" && resolveAuth != nil {
+		authScopeID = resolveAuth(af.AuthScope)
+		if authScopeID == "" {
+			slog.Warn("addon auth_scope not found, will use route's scope",
+				"auth_scope", af.AuthScope, "file", path)
+		}
+	}
+
 	for i, td := range af.Tools {
 		if err := validateTool(td); err != nil {
 			return fmt.Errorf("tools[%d] (%s): %w", i, td.Name, err)
@@ -83,6 +115,7 @@ func (r *Registry) loadFile(path string, resolve NamespaceResolver) error {
 			ParentServerID: af.ParentServer,
 			Namespace:      ns,
 			FullName:       ns + "__" + td.Name,
+			AuthScopeID:    authScopeID,
 		}
 
 		if _, exists := r.byFullName[rt.FullName]; exists {
