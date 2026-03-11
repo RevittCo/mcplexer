@@ -61,6 +61,26 @@ func TestBrowserOriginProtectionMiddleware(t *testing.T) {
 			t.Fatalf("expected %d, got %d", http.StatusForbidden, rr.Code)
 		}
 	})
+
+	t.Run("allows cross-site GET to oauth callback", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "http://localhost/api/v1/oauth/callback?state=abc&code=xyz", nil)
+		req.Header.Set("Sec-Fetch-Site", "cross-site")
+		rr := httptest.NewRecorder()
+		h.ServeHTTP(rr, req)
+		if rr.Code != http.StatusNoContent {
+			t.Fatalf("expected %d, got %d", http.StatusNoContent, rr.Code)
+		}
+	})
+
+	t.Run("blocks cross-site POST to oauth callback", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "http://localhost/api/v1/oauth/callback", nil)
+		req.Header.Set("Sec-Fetch-Site", "cross-site")
+		rr := httptest.NewRecorder()
+		h.ServeHTTP(rr, req)
+		if rr.Code != http.StatusForbidden {
+			t.Fatalf("expected %d, got %d", http.StatusForbidden, rr.Code)
+		}
+	})
 }
 
 func TestRequireJSONContentTypeMiddleware(t *testing.T) {

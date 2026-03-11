@@ -68,9 +68,15 @@ function createWindow(): void {
   });
 
   mainWindow.webContents.on("will-navigate", (event, url) => {
-    if (!isSafeNavigationURL(url)) {
+    const serverUrl = getServerUrl();
+    const isInternal = url.startsWith(serverUrl);
+    if (!isInternal) {
       event.preventDefault();
-      console.warn(`[mcplexer] blocked unsafe navigation: ${url}`);
+      if (isSafeNavigationURL(url)) {
+        void shell.openExternal(url);
+      } else {
+        console.warn(`[mcplexer] blocked unsafe navigation: ${url}`);
+      }
     }
   });
 

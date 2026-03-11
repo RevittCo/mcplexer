@@ -10,5 +10,7 @@ export function redirectToOAuth(url: string): void {
     throw new Error('Received an unsafe authorization URL protocol')
   }
 
-  window.location.assign(parsed.toString())
+  // Use window.open() so Electron's setWindowOpenHandler intercepts it
+  // and opens in the system browser instead of navigating the app window.
+  window.open(parsed.toString(), '_blank')
 }

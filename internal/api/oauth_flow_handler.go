@@ -163,7 +163,13 @@ func (h *oauthFlowHandler) callback(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	http.Redirect(w, r, "/config/auth-scopes", http.StatusFound)
+	// Respond with an HTML page that redirects client-side rather than a 302.
+	// This breaks the cross-site redirect chain so the browser treats the
+	// subsequent navigation as same-origin (avoids Sec-Fetch-Site: cross-site).
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprint(w, `<!DOCTYPE html><html><head><meta http-equiv="refresh" content="0;url=/config/auth-scopes"></head>`+
+		`<body><p>Authentication successful. Redirecting&hellip;</p></body></html>`)
 }
 
 // tokenStatusResponse is the JSON body for oauth token status.

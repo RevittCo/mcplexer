@@ -97,8 +97,14 @@ func securityHeadersMiddleware(next http.Handler) http.Handler {
 
 // browserOriginProtectionMiddleware blocks browser requests from non-local origins.
 // This mitigates localhost CSRF and DNS rebinding abuse against unauthenticated local APIs.
+// The OAuth callback path is exempt because it receives cross-site redirects from providers.
 func browserOriginProtectionMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/oauth/callback" && r.Method == http.MethodGet {
+			next.ServeHTTP(w, r)
+			return
+		}
+
 		origin := r.Header.Get("Origin")
 		if origin != "" && !isLocalOrigin(origin) {
 			writeError(w, http.StatusForbidden, "cross-origin browser request denied")
