@@ -228,6 +228,9 @@ func (h *handler) handleToolsCall(
 		return nil, rpcErr
 	}
 
+	// Coerce stringified JSON arguments (LLMs often pass objects as strings).
+	req.Arguments = coerceStringifiedArgs(req.Arguments)
+
 	// Dispatch based on whether it's a built-in or downstream tool.
 	if routeResult.DownstreamServerID == "mcpx-builtin" {
 		result, rpcErr := h.handleBuiltinCall(ctx, req)
