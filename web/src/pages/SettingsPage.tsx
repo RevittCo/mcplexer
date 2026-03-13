@@ -166,6 +166,59 @@ export function SettingsPage() {
           <Card>
             <CardHeader>
               <CardTitle className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
+                Code Mode
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="space-y-1">
+                  <Label>Enable Code Mode</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Expose execute_code and get_code_api tools. LLMs write JavaScript to compose
+                    tools instead of calling them individually.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={settings.code_mode_enabled}
+                  onClick={() => patch({ code_mode_enabled: !settings.code_mode_enabled })}
+                  className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                    settings.code_mode_enabled ? 'bg-primary' : 'bg-muted'
+                  }`}
+                >
+                  <span
+                    className={`pointer-events-none block h-5 w-5 rounded-full bg-background shadow-lg ring-0 transition-transform ${
+                      settings.code_mode_enabled ? 'translate-x-5' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
+
+              {settings.code_mode_enabled && (
+                <div className="space-y-2 border-t pt-4">
+                  <Label>Execution timeout (seconds)</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Maximum time a code execution can run before being killed (1-120)
+                  </p>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={120}
+                    value={settings.code_mode_timeout_sec}
+                    onChange={(e) =>
+                      patch({ code_mode_timeout_sec: parseInt(e.target.value, 10) || 30 })
+                    }
+                    className="w-32"
+                  />
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
                 Caching
               </CardTitle>
             </CardHeader>
