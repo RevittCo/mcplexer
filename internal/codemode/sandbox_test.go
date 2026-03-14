@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 )
@@ -217,6 +218,65 @@ print("rides: " + rides.length);
 	}
 }
 
+func TestSandbox_PrintAutoSerializesObjects(t *testing.T) {
+	caller := newMockCaller()
+	sandbox := NewSandbox(caller, 5*time.Second)
+
+	code := `
+const obj = { name: "alice", count: 3 };
+print(obj);
+const arr = [1, 2, 3];
+print(arr);
+print("string", 42, true);
+`
+	result, err := sandbox.Execute(context.Background(), code, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Objects should be JSON-serialized, not "[object Object]".
+	if strings.Contains(result.Output, "[object Object]") {
+		t.Errorf("print should auto-serialize objects, got:\n%s", result.Output)
+	}
+	if !strings.Contains(result.Output, `"name"`) {
+		t.Errorf("expected JSON key in output, got:\n%s", result.Output)
+	}
+	if !strings.Contains(result.Output, `"alice"`) {
+		t.Errorf("expected JSON value in output, got:\n%s", result.Output)
+	}
+	// Primitives should still work normally.
+	if !strings.Contains(result.Output, "string 42 true") {
+		t.Errorf("expected primitives on one line, got:\n%s", result.Output)
+	}
+}
+
+func TestSandbox_PrintToolResultWithoutStringify(t *testing.T) {
+	caller := newMockCaller()
+	caller.responses["api__get_user"] = json.RawMessage(
+		`{"content":[{"type":"text","text":"{\"id\":1,\"name\":\"bob\"}"}]}`,
+	)
+
+	tools := []ToolDef{
+		{Name: "api__get_user", InputSchema: json.RawMessage(`{"type":"object","properties":{}}`)},
+	}
+
+	sandbox := NewSandbox(caller, 5*time.Second)
+	// The key test: print(result) should show JSON, not [object Object].
+	result, err := sandbox.Execute(context.Background(),
+		`const user = api.get_user(); print(user);`,
+		tools,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(result.Output, "[object Object]") {
+		t.Errorf("print(toolResult) should auto-serialize, got:\n%s", result.Output)
+	}
+	if !strings.Contains(result.Output, `"bob"`) {
+		t.Errorf("expected user data in output, got:\n%s", result.Output)
+	}
+}
+
 func TestSandbox_SyntaxError(t *testing.T) {
 	caller := newMockCaller()
 	sandbox := NewSandbox(caller, 5*time.Second)
@@ -227,6 +287,30 @@ func TestSandbox_SyntaxError(t *testing.T) {
 	}
 	if result.Error == "" {
 		t.Error("expected syntax error")
+	}
+}
+
+func TestSandbox_ToolResultWithMultipleContentItemsReturnsEnvelope(t *testing.T) {
+	caller := newMockCaller()
+	caller.responses["github__get_bundle"] = json.RawMessage(
+		`{"content":[{"type":"text","text":"first"},{"type":"text","text":"second"}]}`,
+	)
+
+	tools := []ToolDef{
+		{Name: "github__get_bundle", InputSchema: json.RawMessage(`{"type":"object","properties":{}}`)},
+	}
+
+	sandbox := NewSandbox(caller, 5*time.Second)
+	result, err := sandbox.Execute(
+		context.Background(),
+		`const bundle = github.get_bundle(); print(bundle.content.length);`,
+		tools,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Output != "2\n" {
+		t.Fatalf("expected full envelope in JS, got %q", result.Output)
 	}
 }
 

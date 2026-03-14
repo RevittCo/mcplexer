@@ -63,34 +63,15 @@ func (s *Sandbox) Execute(ctx context.Context, code string, tools []ToolDef) (*E
 		records []ToolCallRecord
 	)
 
-	// Register print() for captured output.
-	if err := vm.Set("print", func(call goja.FunctionCall) goja.Value {
-		parts := make([]string, len(call.Arguments))
-		for i, arg := range call.Arguments {
-			parts[i] = arg.String()
-		}
-		mu.Lock()
-		output.WriteString(strings.Join(parts, " "))
-		output.WriteByte('\n')
-		mu.Unlock()
-		return goja.Undefined()
-	}); err != nil {
+	// Shared print handler used by both print() and console.log.
+	printFn := makePrintFunc(&mu, &output)
+
+	if err := vm.Set("print", printFn); err != nil {
 		return nil, fmt.Errorf("set print: %w", err)
 	}
 
-	// Register console.log as alias for print.
 	console := vm.NewObject()
-	if err := console.Set("log", func(call goja.FunctionCall) goja.Value {
-		parts := make([]string, len(call.Arguments))
-		for i, arg := range call.Arguments {
-			parts[i] = arg.String()
-		}
-		mu.Lock()
-		output.WriteString(strings.Join(parts, " "))
-		output.WriteByte('\n')
-		mu.Unlock()
-		return goja.Undefined()
-	}); err != nil {
+	if err := console.Set("log", printFn); err != nil {
 		return nil, fmt.Errorf("set console.log: %w", err)
 	}
 	if err := vm.Set("console", console); err != nil {
@@ -155,6 +136,21 @@ func (s *Sandbox) makeToolFunc(
 	records *[]ToolCallRecord,
 ) func(call goja.FunctionCall) goja.Value {
 	return func(call goja.FunctionCall) goja.Value {
+		defer func() {
+			if r := recover(); r != nil {
+				switch v := r.(type) {
+				case *goja.Exception:
+					panic(v)
+				case goja.Value:
+					panic(v)
+				case error:
+					panic(vm.ToValue(fmt.Sprintf("tool call %s panicked: %v", toolName, v)))
+				default:
+					panic(vm.ToValue(fmt.Sprintf("tool call %s panicked: %v", toolName, v)))
+				}
+			}
+		}()
+
 		start := time.Now()
 
 		// Marshal arguments from JS object to JSON.
@@ -194,46 +190,100 @@ func (s *Sandbox) makeToolFunc(
 		*records = append(*records, record)
 		mu.Unlock()
 
-		// Parse the MCP CallToolResult to extract text content.
+		// Parse the MCP CallToolResult into the most useful JS value we can.
 		return parseToolResult(vm, result)
 	}
 }
 
-// parseToolResult extracts text content from an MCP CallToolResult and
-// returns it as a Goja value. If the result is a JSON object with content
-// array, it extracts and tries to parse the text as JSON.
+// parseToolResult converts an MCP CallToolResult to a Goja value.
+// For a single text item it returns the parsed JSON payload when possible,
+// otherwise the raw text. For richer content it returns the full call result.
 func parseToolResult(vm *goja.Runtime, raw json.RawMessage) goja.Value {
 	var callResult struct {
-		Content []struct {
-			Type string `json:"type"`
-			Text string `json:"text"`
-		} `json:"content"`
-		IsError bool `json:"isError"`
+		Content []map[string]any `json:"content"`
+		IsError bool             `json:"isError"`
 	}
 
-	if err := json.Unmarshal(raw, &callResult); err == nil && len(callResult.Content) > 0 {
+	if err := json.Unmarshal(raw, &callResult); err == nil {
 		if callResult.IsError {
-			panic(vm.ToValue(callResult.Content[0].Text))
+			panic(vm.ToValue(formatToolError(callResult.Content, raw)))
 		}
 
-		text := callResult.Content[0].Text
+		if len(callResult.Content) == 1 {
+			if text, ok := callResult.Content[0]["text"].(string); ok {
+				var parsed any
+				if err := json.Unmarshal([]byte(text), &parsed); err == nil {
+					return vm.ToValue(parsed)
+				}
+				return vm.ToValue(text)
+			}
+		}
 
-		// Try to parse as JSON for structured data access.
 		var parsed any
-		if err := json.Unmarshal([]byte(text), &parsed); err == nil {
+		if err := json.Unmarshal(raw, &parsed); err == nil {
 			return vm.ToValue(parsed)
 		}
-
-		return vm.ToValue(text)
 	}
 
-	// Fallback: try to parse the raw result as JSON.
 	var parsed any
 	if err := json.Unmarshal(raw, &parsed); err == nil {
 		return vm.ToValue(parsed)
 	}
 
 	return vm.ToValue(string(raw))
+}
+
+func formatToolError(content []map[string]any, raw json.RawMessage) string {
+	parts := make([]string, 0, len(content))
+	for _, item := range content {
+		if text, ok := item["text"].(string); ok && text != "" {
+			parts = append(parts, text)
+		}
+	}
+	if len(parts) > 0 {
+		return strings.Join(parts, "\n")
+	}
+	if len(raw) > 0 {
+		return string(raw)
+	}
+	return "tool returned error"
+}
+
+// makePrintFunc returns a Goja-compatible function that captures output.
+// Objects and arrays are auto-serialized to indented JSON so callers
+// never see "[object Object]".
+func makePrintFunc(mu *sync.Mutex, output *strings.Builder) func(goja.FunctionCall) goja.Value {
+	return func(call goja.FunctionCall) goja.Value {
+		parts := make([]string, len(call.Arguments))
+		for i, arg := range call.Arguments {
+			parts[i] = formatPrintArg(arg)
+		}
+		mu.Lock()
+		output.WriteString(strings.Join(parts, " "))
+		output.WriteByte('\n')
+		mu.Unlock()
+		return goja.Undefined()
+	}
+}
+
+// formatPrintArg converts a Goja value to a readable string.
+// Primitives use their natural string form; objects and arrays are
+// JSON-serialized with indentation for readability.
+func formatPrintArg(arg goja.Value) string {
+	if arg == nil || goja.IsUndefined(arg) || goja.IsNull(arg) {
+		return arg.String()
+	}
+	exported := arg.Export()
+	switch exported.(type) {
+	case string, float64, int64, bool:
+		return arg.String()
+	default:
+		data, err := json.MarshalIndent(exported, "", "  ")
+		if err != nil {
+			return arg.String()
+		}
+		return string(data)
+	}
 }
 
 // isTimeoutError checks if a Goja error was caused by an interrupt.

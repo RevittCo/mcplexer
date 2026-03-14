@@ -5,11 +5,26 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/revittco/mcplexer/internal/codemode"
+	"github.com/revittco/mcplexer/internal/store"
 )
+
+type codeModeContextKey string
+
+const internalCodeModeCallKey codeModeContextKey = "internal-code-mode-call"
+
+func withInternalCodeModeCall(ctx context.Context) context.Context {
+	return context.WithValue(ctx, internalCodeModeCallKey, true)
+}
+
+func isInternalCodeModeCall(ctx context.Context) bool {
+	internal, _ := ctx.Value(internalCodeModeCallKey).(bool)
+	return internal
+}
 
 // handlerToolCaller adapts the gateway handler to the codemode.ToolCaller
 // interface, routing each tool call through the full pipeline.
@@ -45,8 +60,7 @@ func (h *handler) handleCodeExecute(
 ) (json.RawMessage, *RPCError) {
 	timeout := h.codeModeTimeout(ctx)
 
-	// Use cached tool defs to avoid re-querying all downstream servers.
-	toolDefs, err := h.cachedCodeModeToolDefs(ctx)
+	toolDefs, err := h.codeModeToolDefs(ctx)
 	if err != nil {
 		return nil, &RPCError{
 			Code:    CodeInternalError,
@@ -60,7 +74,7 @@ func (h *handler) handleCodeExecute(
 	caller := &handlerToolCaller{handler: h}
 	sandbox := codemode.NewSandbox(caller, timeout)
 
-	result, err := sandbox.Execute(ctx, jsCode, toolDefs)
+	result, err := sandbox.Execute(withInternalCodeModeCall(ctx), jsCode, toolDefs)
 	if err != nil {
 		return nil, &RPCError{
 			Code:    CodeInternalError,
@@ -78,7 +92,7 @@ func (h *handler) handleCodeExecute(
 	return marshalCodeResult(result), nil
 }
 
-// handleGetCodeAPI returns TypeScript API definitions for loaded tools.
+// handleGetCodeAPI returns TypeScript API definitions for code-mode tools.
 func (h *handler) handleGetCodeAPI(
 	ctx context.Context, namespace string,
 ) (json.RawMessage, *RPCError) {
@@ -104,7 +118,7 @@ func (h *handler) handleGetCodeAPI(
 	if len(tools) == 0 {
 		if namespace != "" {
 			return marshalToolResult(fmt.Sprintf(
-				"No tools found for namespace %q. Use search_tools to discover available namespaces.", namespace,
+				"No tools found for namespace %q. Call get_code_api without a namespace filter to inspect the full API.", namespace,
 			)), nil
 		}
 		return marshalToolResult("No tools available for code API."), nil
@@ -123,19 +137,85 @@ func (h *handler) handleGetCodeAPI(
 	return marshalToolResult(ts), nil
 }
 
-// gatherCodeModeTools collects all tools available for code mode, including
-// static tools, active session tools, and addon tools — but excluding
-// built-in mcpx__ tools.
+// gatherCodeModeTools collects all tools available through execute_code.
 func (h *handler) gatherCodeModeTools(ctx context.Context) ([]Tool, error) {
-	allTools, err := h.gatherAllTools(ctx)
+	servers, err := h.store.ListDownstreamServers(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	// Include active session tools.
-	allTools = append(allTools, h.sessions.getActiveTools()...)
+	var (
+		staticServers  []store.DownstreamServer
+		dynamicServers []store.DownstreamServer
+		namespaces     = make(map[string]string, len(servers))
+		allTools       []Tool
+	)
 
-	// Deduplicate and exclude built-in tools.
+	for _, srv := range servers {
+		if srv.Transport == "internal" {
+			continue
+		}
+		namespaces[srv.ID] = srv.ToolNamespace
+		if srv.Discovery == "dynamic" {
+			dynamicServers = append(dynamicServers, srv)
+		} else {
+			staticServers = append(staticServers, srv)
+		}
+	}
+
+	collect := func(serverGroup []store.DownstreamServer) error {
+		if len(serverGroup) == 0 {
+			return nil
+		}
+
+		serverIDs := make([]string, 0, len(serverGroup))
+		for _, srv := range serverGroup {
+			serverIDs = append(serverIDs, srv.ID)
+		}
+
+		liveTools, err := h.cachedListToolsForServers(ctx, serverIDs)
+		if err != nil {
+			return err
+		}
+
+		for _, srv := range serverGroup {
+			rawResult, ok := liveTools[srv.ID]
+			if !ok {
+				if len(srv.CapabilitiesCache) > 0 && string(srv.CapabilitiesCache) != "{}" {
+					rawResult = srv.CapabilitiesCache
+				} else {
+					continue
+				}
+			} else if err := h.store.UpdateCapabilitiesCache(ctx, srv.ID, rawResult); err != nil {
+				slog.Warn("failed to update capabilities cache",
+					"server", srv.ID, "error", err)
+			}
+
+			ns := namespaces[srv.ID]
+			tools, err := extractNamespacedTools(ns, rawResult)
+			if err != nil {
+				slog.Warn("failed to extract code mode tools",
+					"server", srv.ID, "error", err)
+				continue
+			}
+			allTools = append(allTools, tools...)
+		}
+
+		return nil
+	}
+
+	if err := collect(staticServers); err != nil {
+		return nil, err
+	}
+	if err := collect(dynamicServers); err != nil {
+		return nil, err
+	}
+
+	if h.addonRegistry != nil {
+		allTools = append(allTools, addonToolDefinitions(h.addonRegistry)...)
+	}
+	allTools = append(allTools, h.codeModeBuiltinTools(len(dynamicServers) > 0)...)
+
 	seen := make(map[string]struct{})
 	var filtered []Tool
 	for _, t := range allTools {
@@ -143,46 +223,20 @@ func (h *handler) gatherCodeModeTools(ctx context.Context) ([]Tool, error) {
 			continue
 		}
 		seen[t.Name] = struct{}{}
-		// Exclude mcpx__ built-in tools from code API.
-		if ns, _, ok := splitNamespace(t.Name); ok && ns == "mcpx" {
-			continue
-		}
 		filtered = append(filtered, t)
 	}
 
-	// Filter by workspace routes.
 	filtered = h.filterByWorkspaceRoutes(ctx, filtered)
 
 	return filtered, nil
 }
 
-// cachedCodeModeToolDefs returns tool definitions for the sandbox, using
-// the tools/list cache to avoid re-querying downstream servers on every
-// execute_code call. Cache TTL matches the tools/list cache (default 15s).
-func (h *handler) cachedCodeModeToolDefs(ctx context.Context) ([]codemode.ToolDef, error) {
-	const cacheKey = "__codemode_tooldefs__"
-
-	cached, err := h.toolsListCache.GetOrLoad(cacheKey, func() (json.RawMessage, error) {
-		tools, err := h.gatherCodeModeTools(ctx)
-		if err != nil {
-			return nil, err
-		}
-		defs := toolsToToolDefs(tools)
-		data, err := json.Marshal(defs)
-		if err != nil {
-			return nil, err
-		}
-		return data, nil
-	})
+func (h *handler) codeModeToolDefs(ctx context.Context) ([]codemode.ToolDef, error) {
+	tools, err := h.gatherCodeModeTools(ctx)
 	if err != nil {
 		return nil, err
 	}
-
-	var defs []codemode.ToolDef
-	if err := json.Unmarshal(cached, &defs); err != nil {
-		return nil, err
-	}
-	return defs, nil
+	return toolsToToolDefs(tools), nil
 }
 
 // toolsToToolDefs converts gateway Tools to codemode ToolDefs.
@@ -284,6 +338,20 @@ func (h *handler) codeModeTimeout(ctx context.Context) time.Duration {
 	return time.Duration(timeout) * time.Second
 }
 
+func (h *handler) codeModeBuiltinTools(hasDynamicServers bool) []Tool {
+	var tools []Tool
+	if hasDynamicServers {
+		tools = append(tools, searchToolDefinition())
+	}
+	if h.approvals != nil {
+		tools = append(tools, approvalToolDefinitions()...)
+	}
+	if _, ok := h.manager.(CachingCaller); ok {
+		tools = append(tools, flushCacheToolDefinition())
+	}
+	return tools
+}
+
 // maxEmbeddedAPISize is the max TypeScript API size to embed directly in the
 // execute_code tool description. Beyond this, the AI should call get_code_api.
 const maxEmbeddedAPISize = 8000
@@ -296,21 +364,28 @@ func (h *handler) buildCodeExecuteTool(ctx context.Context) (Tool, bool) {
 	var description string
 	apiEmbedded := false
 
-	toolDefs, err := h.cachedCodeModeToolDefs(ctx)
+	toolDefs, err := h.codeModeToolDefs(ctx)
 	if err != nil || len(toolDefs) == 0 {
-		description = "Execute JavaScript/TypeScript code. " +
-			"Call get_code_api first to see available tool functions and their signatures. " +
-			"Tool functions are synchronous (no await). Use print() for output."
+		description = "Execute JavaScript code that calls multiple tools in a single invocation. " +
+			"Combine ALL related queries into a single script — calls run sequentially, " +
+			"so results from earlier calls feed directly into later ones (daisy-chain). " +
+			"Call get_code_api first to inspect available functions. " +
+			"All calls are synchronous (no await). " +
+			"print() auto-serializes objects to JSON — no JSON.stringify needed."
 	} else {
 		tsAPI := codemode.GenerateTypeScript(toolDefs)
 
 		if len(tsAPI) <= maxEmbeddedAPISize {
-			description = "Execute JavaScript code with the tool API below. " +
-				"All functions are synchronous — no await needed. Use print() for output.\n\n" +
+			description = "Execute JavaScript code that batches multiple tool calls into one invocation. " +
+				"Combine ALL related queries into a single script — calls run sequentially, " +
+				"so results from earlier calls feed directly into later ones (daisy-chain). " +
+				"Avoid multiple execute_code calls when one script will do. " +
+				"All functions are synchronous — no await needed. " +
+				"print() auto-serializes objects to JSON — no JSON.stringify needed. " +
+				"The declarations below are reference-only and should not be pasted into execute_code.\n\n" +
 				tsAPI
 			apiEmbedded = true
 		} else {
-			// Too large to embed — summarize namespaces and tell AI to use get_code_api.
 			nsCounts := make(map[string]int)
 			for _, td := range toolDefs {
 				if ns, _, ok := splitNamespace(td.Name); ok {
@@ -318,13 +393,24 @@ func (h *handler) buildCodeExecuteTool(ctx context.Context) (Tool, bool) {
 				}
 			}
 			var sb strings.Builder
-			for ns, count := range nsCounts {
+			namespaces := make([]string, 0, len(nsCounts))
+			for ns := range nsCounts {
+				namespaces = append(namespaces, ns)
+			}
+			sort.Strings(namespaces)
+			for _, ns := range namespaces {
+				count := nsCounts[ns]
 				fmt.Fprintf(&sb, "  %s (%d tools)\n", ns, count)
 			}
 			description = fmt.Sprintf(
-				"Execute JavaScript code with access to %d tools across these namespaces:\n%s"+
+				"Execute JavaScript code that batches multiple tool calls into one invocation. "+
+					"Combine ALL related queries into a single script — calls run sequentially, "+
+					"so results from earlier calls feed directly into later ones (daisy-chain). "+
+					"Avoid multiple execute_code calls when one script will do. "+
+					"Access to %d tools across these namespaces:\n%s"+
 					"Call get_code_api to see TypeScript signatures (optionally filter by namespace). "+
-					"All functions are synchronous — no await needed. Use print() for output.",
+					"All functions are synchronous — no await needed. "+
+					"print() auto-serializes objects to JSON — no JSON.stringify needed.",
 				len(toolDefs), sb.String(),
 			)
 		}
@@ -334,13 +420,13 @@ func (h *handler) buildCodeExecuteTool(ctx context.Context) (Tool, bool) {
 		Name:        "mcpx__execute_code",
 		Description: description,
 		InputSchema: json.RawMessage(`{
-			"type": "object",
-			"properties": {
-				"code": {
-					"type": "string",
-					"description": "JavaScript or TypeScript code to execute. TypeScript type annotations are automatically stripped. Tool functions are available as namespace.function_name() — call them synchronously without await."
-				}
-			},
+				"type": "object",
+				"properties": {
+					"code": {
+						"type": "string",
+						"description": "JavaScript code to execute. Combine ALL tool calls into one script — calls run sequentially and return values from earlier calls can be passed directly to later ones (daisy-chain). Tool functions are available as namespace.function_name() — call them synchronously without await. print() auto-serializes objects to JSON. Basic TypeScript annotations are stripped; the declarations from get_code_api are reference-only."
+					}
+				},
 			"required": ["code"]
 		}`),
 		Extras: withAnnotations(ToolAnnotations{
@@ -357,8 +443,8 @@ func codeAPIToolDefinition() Tool {
 		Name: "mcpx__get_code_api",
 		Description: "Get TypeScript API definitions for all available tool functions. " +
 			"Returns type declarations showing function signatures, parameter types, " +
-			"and namespaces. Use this before execute_code to understand the available API. " +
-			"Optionally filter by namespace (e.g. 'github', 'linear').",
+			"and namespaces. Review these before writing execute_code scripts that batch " +
+			"multiple tool calls together. Optionally filter by namespace (e.g. 'github', 'linear').",
 		InputSchema: json.RawMessage(`{
 			"type": "object",
 			"properties": {
