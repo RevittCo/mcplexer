@@ -401,6 +401,7 @@ export function DownstreamsPage() {
           authScopeId={apiKeyTarget.scope.id}
           authScopeName={apiKeyTarget.scope.name}
           serverName={apiKeyTarget.server.name}
+          envFields={apiKeyTarget.scope.env_fields}
         />
       )}
     </div>

@@ -37,95 +37,109 @@ func (h *handler) handleToolsList(
 		}
 	}
 
-	// Query static servers live for the advertised tool list.
-	// Use the tools/list cache to avoid hammering downstream servers.
-	liveTools, err := h.cachedListToolsForServers(ctx, staticIDs)
-	if err != nil {
-		return nil, &RPCError{
-			Code:    CodeInternalError,
-			Message: fmt.Sprintf("list tools: %v", err),
-		}
-	}
+	codeModeOn := h.codeModeEnabled(ctx)
 
 	tools := make([]Tool, 0)
-	for serverID, rawResult := range liveTools {
-		ns := namespaces[serverID]
-		t, err := extractNamespacedTools(ns, rawResult)
-		if err != nil {
-			slog.Warn("failed to extract tools",
-				"server", serverID, "error", err)
-			continue
-		}
-		tools = append(tools, t...)
 
-		if err := h.store.UpdateCapabilitiesCache(ctx, serverID, rawResult); err != nil {
-			slog.Warn("failed to update capabilities cache",
-				"server", serverID, "error", err)
-		}
-	}
-
-	// Codex compatibility mode: include dynamic-discovery tools directly in
-	// tools/list to avoid relying on load_tools/list_changed orchestration.
-	if h.includeDynamicToolsForCodex(ctx) && len(dynamicServers) > 0 {
-		dynamicIDs := make([]string, 0, len(dynamicServers))
-		for _, srv := range dynamicServers {
-			dynamicIDs = append(dynamicIDs, srv.ID)
-		}
-
-		dynamicLiveTools, err := h.cachedListToolsForServers(ctx, dynamicIDs)
+	// In code mode, downstream tools are suppressed from tools/list — they're
+	// accessible through execute_code instead. We still gather them to build
+	// the embedded TypeScript API.
+	if !codeModeOn {
+		// Query static servers live for the advertised tool list.
+		// Use the tools/list cache to avoid hammering downstream servers.
+		liveTools, err := h.cachedListToolsForServers(ctx, staticIDs)
 		if err != nil {
 			return nil, &RPCError{
 				Code:    CodeInternalError,
-				Message: fmt.Sprintf("list dynamic tools: %v", err),
+				Message: fmt.Sprintf("list tools: %v", err),
 			}
 		}
 
-		for _, srv := range dynamicServers {
-			rawResult, ok := dynamicLiveTools[srv.ID]
-			if !ok {
-				if len(srv.CapabilitiesCache) > 0 && string(srv.CapabilitiesCache) != "{}" {
-					rawResult = srv.CapabilitiesCache
-				} else {
-					continue
-				}
-			} else if err := h.store.UpdateCapabilitiesCache(ctx, srv.ID, rawResult); err != nil {
-				slog.Warn("failed to update capabilities cache",
-					"server", srv.ID, "error", err)
-			}
-
-			ns := namespaces[srv.ID]
+		for serverID, rawResult := range liveTools {
+			ns := namespaces[serverID]
 			t, err := extractNamespacedTools(ns, rawResult)
 			if err != nil {
 				slog.Warn("failed to extract tools",
-					"server", srv.ID, "error", err)
+					"server", serverID, "error", err)
 				continue
 			}
 			tools = append(tools, t...)
+
+			if err := h.store.UpdateCapabilitiesCache(ctx, serverID, rawResult); err != nil {
+				slog.Warn("failed to update capabilities cache",
+					"server", serverID, "error", err)
+			}
 		}
+
+		// Codex compatibility mode: include dynamic-discovery tools directly in
+		// tools/list to avoid relying on load_tools/list_changed orchestration.
+		if h.includeDynamicToolsForCodex(ctx) && len(dynamicServers) > 0 {
+			dynamicIDs := make([]string, 0, len(dynamicServers))
+			for _, srv := range dynamicServers {
+				dynamicIDs = append(dynamicIDs, srv.ID)
+			}
+
+			dynamicLiveTools, err := h.cachedListToolsForServers(ctx, dynamicIDs)
+			if err != nil {
+				return nil, &RPCError{
+					Code:    CodeInternalError,
+					Message: fmt.Sprintf("list dynamic tools: %v", err),
+				}
+			}
+
+			for _, srv := range dynamicServers {
+				rawResult, ok := dynamicLiveTools[srv.ID]
+				if !ok {
+					if len(srv.CapabilitiesCache) > 0 && string(srv.CapabilitiesCache) != "{}" {
+						rawResult = srv.CapabilitiesCache
+					} else {
+						continue
+					}
+				} else if err := h.store.UpdateCapabilitiesCache(ctx, srv.ID, rawResult); err != nil {
+					slog.Warn("failed to update capabilities cache",
+						"server", srv.ID, "error", err)
+				}
+
+				ns := namespaces[srv.ID]
+				t, err := extractNamespacedTools(ns, rawResult)
+				if err != nil {
+					slog.Warn("failed to extract tools",
+						"server", srv.ID, "error", err)
+					continue
+				}
+				tools = append(tools, t...)
+			}
+		}
+
+		// Inject addon tools (from YAML definitions that bridge MCP server gaps).
+		if h.addonRegistry != nil {
+			tools = append(tools, addonToolDefinitions(h.addonRegistry)...)
+		}
+
+		// For dynamic servers, only include tools explicitly loaded via load_tools.
+		activeTools := h.sessions.getActiveTools()
+		tools = append(tools, activeTools...)
 	}
 
-	// Inject addon tools (from YAML definitions that bridge MCP server gaps).
-	if h.addonRegistry != nil {
-		tools = append(tools, addonToolDefinitions(h.addonRegistry)...)
-	}
+	if codeModeOn {
+		execTool, _ := h.buildCodeExecuteTool(ctx)
+		tools = append(tools, execTool)
+		tools = append(tools, codeAPIToolDefinition())
+	} else {
+		// Include built-in tools based on server configuration.
+		if len(dynamicServers) > 0 {
+			tools = append(tools, searchToolDefinition())
+			tools = append(tools, loadToolDefinition())
+			tools = append(tools, unloadToolDefinition())
+		}
 
-	// For dynamic servers, only include tools explicitly loaded via load_tools.
-	activeTools := h.sessions.getActiveTools()
-	tools = append(tools, activeTools...)
+		if h.approvals != nil {
+			tools = append(tools, approvalToolDefinitions()...)
+		}
 
-	// Include built-in tools based on server configuration.
-	if len(dynamicServers) > 0 {
-		tools = append(tools, searchToolDefinition())
-		tools = append(tools, loadToolDefinition())
-		tools = append(tools, unloadToolDefinition())
-	}
-
-	if h.approvals != nil {
-		tools = append(tools, approvalToolDefinitions()...)
-	}
-
-	if _, ok := h.manager.(CachingCaller); ok {
-		tools = append(tools, flushCacheToolDefinition())
+		if _, ok := h.manager.(CachingCaller); ok {
+			tools = append(tools, flushCacheToolDefinition())
+		}
 	}
 
 	tools = dedupeToolsByName(tools)
@@ -215,6 +229,14 @@ func (h *handler) handleToolsCall(
 	// Normalize legacy mcplexer__ prefix to mcpx__ for backward compat.
 	req.Name = normalizeBuiltinName(req.Name)
 
+	if h.codeModeEnabled(ctx) && !isInternalCodeModeCall(ctx) && !isAllowedDirectCodeModeTool(req.Name) {
+		result := marshalErrorResult(
+			"Code mode is enabled. Direct tool calls are disabled; use mcpx__execute_code instead.",
+		)
+		h.recordAuditBlocked(ctx, req.Name, req.Arguments, nil, result, nil, start)
+		return result, nil
+	}
+
 	// Extract namespace from tool name (namespace__toolname).
 	originalTool := extractOriginalToolName(req.Name)
 
@@ -261,7 +283,15 @@ func (h *handler) handleToolsCall(
 
 	// Look up server name for clearer error messages.
 	serverName := routeResult.DownstreamServerID
-	if srv, err := h.store.GetDownstreamServer(ctx, routeResult.DownstreamServerID); err == nil {
+	if serverName == "" {
+		rpcErr := &RPCError{
+			Code:    CodeInternalError,
+			Message: "matched route has no downstream server configured",
+		}
+		h.recordAudit(ctx, req.Name, req.Arguments, routeResult, nil, rpcErr, start)
+		return nil, rpcErr
+	}
+	if srv, err := h.store.GetDownstreamServer(ctx, routeResult.DownstreamServerID); err == nil && srv != nil {
 		serverName = srv.Name
 	}
 
@@ -416,6 +446,15 @@ func extractOriginalToolName(namespacedTool string) string {
 		return after
 	}
 	return namespacedTool
+}
+
+func isAllowedDirectCodeModeTool(name string) bool {
+	switch normalizeBuiltinName(name) {
+	case "mcpx__execute_code", "mcpx__get_code_api":
+		return true
+	default:
+		return false
+	}
 }
 
 // formatDownstreamError produces a human-readable error message for downstream

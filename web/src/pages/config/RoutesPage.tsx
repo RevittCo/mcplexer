@@ -98,12 +98,13 @@ export function RoutesPage() {
   function openEdit(r: RouteRule) {
     setEditing(r)
     const tm = Array.isArray(r.tool_match) ? (r.tool_match as string[]) : []
+    const normalizedToolMatch = tm.length === 1 && tm[0] === '*' ? [] : tm
     setForm({
       name: r.name || '',
       priority: r.priority,
       workspace_id: r.workspace_id,
       path_glob: r.path_glob || '**',
-      tool_match: tm,
+      tool_match: normalizedToolMatch,
       downstream_server_id: r.downstream_server_id,
       auth_scope_id: r.auth_scope_id,
       policy: r.policy,

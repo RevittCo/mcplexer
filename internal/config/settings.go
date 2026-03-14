@@ -17,6 +17,8 @@ type Settings struct {
 	ToolsCacheTTLSec         int               `json:"tools_cache_ttl_sec"`
 	LogLevel                 string            `json:"log_level"`
 	CodexDynamicToolCompat   bool              `json:"codex_dynamic_tool_compat"`
+	CodeModeEnabled          bool              `json:"code_mode_enabled"`
+	CodeModeTimeoutSec       int               `json:"code_mode_timeout_sec"`
 	ToolDescriptionOverrides map[string]string `json:"tool_description_overrides"`
 }
 
@@ -27,6 +29,8 @@ func DefaultSettings() Settings {
 		ToolsCacheTTLSec:         15,
 		LogLevel:                 "info",
 		CodexDynamicToolCompat:   true,
+		CodeModeEnabled:          false,
+		CodeModeTimeoutSec:       30,
 		ToolDescriptionOverrides: map[string]string{},
 	}
 }
@@ -41,6 +45,8 @@ func BuiltinToolDefaults() map[string]string {
 		"mcpx__list_pending_approvals": "List pending tool call approvals waiting for review. Returns approval IDs, tool names, justifications, and requesting agent info. Your own pending requests are excluded.",
 		"mcpx__approve_tool_call":      "Approve a pending tool call request. You cannot approve your own requests.",
 		"mcpx__deny_tool_call":         "Deny a pending tool call request. You cannot deny your own requests. A reason is required.",
+		"mcpx__execute_code":           "Execute JavaScript code that batches multiple tool calls into one invocation. Chain results between calls — use the return value of one tool as input to the next. All functions are synchronous (no await). Use get_code_api to inspect available signatures. Use print() for output.",
+		"mcpx__get_code_api":           "Get TypeScript API definitions for the code-mode tool API. Returns type declarations showing function signatures, parameter types, and namespaces. Review these before writing execute_code scripts that batch multiple tool calls together.",
 	}
 }
 
@@ -105,6 +111,10 @@ func validateSettings(s Settings) error {
 	}
 	if !validLevels[strings.ToLower(s.LogLevel)] {
 		return fmt.Errorf("log_level must be one of: debug, info, warn, error")
+	}
+
+	if s.CodeModeTimeoutSec < 1 || s.CodeModeTimeoutSec > 120 {
+		return fmt.Errorf("code_mode_timeout_sec must be between 1 and 120")
 	}
 
 	return nil

@@ -80,6 +80,33 @@ func (h *handler) handleBuiltinCall(
 		}
 		return h.handleFlushCache(args.ServerID)
 
+	case "mcpx__execute_code":
+		if !h.codeModeEnabled(ctx) {
+			return marshalErrorResult("Code mode is not enabled. Enable it in Settings."), nil
+		}
+		var args struct {
+			Code string `json:"code"`
+		}
+		if err := json.Unmarshal(req.Arguments, &args); err != nil {
+			return nil, &RPCError{Code: CodeInvalidParams, Message: err.Error()}
+		}
+		if args.Code == "" {
+			return nil, &RPCError{Code: CodeInvalidParams, Message: "code is required"}
+		}
+		return h.handleCodeExecute(ctx, args.Code)
+
+	case "mcpx__get_code_api":
+		if !h.codeModeEnabled(ctx) {
+			return marshalErrorResult("Code mode is not enabled. Enable it in Settings."), nil
+		}
+		var args struct {
+			Namespace string `json:"namespace"`
+		}
+		if len(req.Arguments) > 0 {
+			_ = json.Unmarshal(req.Arguments, &args)
+		}
+		return h.handleGetCodeAPI(ctx, args.Namespace)
+
 	default:
 		return nil, &RPCError{
 			Code:    CodeMethodNotFound,

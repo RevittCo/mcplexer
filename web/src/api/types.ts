@@ -387,6 +387,8 @@ export interface Settings {
   tools_cache_ttl_sec: number
   log_level: string
   codex_dynamic_tool_compat: boolean
+  code_mode_enabled: boolean
+  code_mode_timeout_sec: number
   tool_description_overrides: Record<string, string>
 }
 

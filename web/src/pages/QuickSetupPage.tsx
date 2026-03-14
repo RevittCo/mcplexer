@@ -114,6 +114,13 @@ export function QuickSetupPage() {
   const completedSteps = stepStack.slice(0, -1)
   const wsName = workspaces?.find((w) => w.id === workspaceId)?.name ?? workspaceId
 
+  useEffect(() => {
+    if (!workspaces || workspaces.length === 0) return
+    if (!workspaces.some((workspace) => workspace.id === workspaceId)) {
+      setWorkspaceId(workspaces[0].id)
+    }
+  }, [workspaceId, workspaces])
+
   function getStatusInfo(dsId: string) {
     const entries = oauthStatuses[dsId]
     const connected = entries?.some((e) => e.status === 'authenticated')
@@ -216,10 +223,10 @@ export function QuickSetupPage() {
               <button
                 key={ds.id}
                 type="button"
-                className="relative flex flex-col gap-2 rounded-lg border border-border p-5 text-left transition-all hover:border-primary hover:bg-muted/50 hover:shadow-sm"
+                className="relative flex flex-col gap-2 overflow-hidden rounded-lg border border-border p-5 text-left transition-all hover:border-primary hover:bg-muted/50 hover:shadow-sm"
                 onClick={() => pickIntegration(ds)}
               >
-                <div className="absolute right-3 top-3 flex gap-1.5">
+                <div className="absolute right-3 top-3 flex gap-1.5 whitespace-nowrap">
                   {hasError && (
                     <Badge variant="outline" className="text-destructive border-destructive/30">
                       <AlertCircle className="mr-1 h-3 w-3" /> Error
@@ -256,7 +263,7 @@ export function QuickSetupPage() {
                     <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground/50" />
                   )}
                 </div>
-                <span className="text-base font-semibold">{ds.name}</span>
+                <span className="text-base font-semibold pr-[45%] truncate">{ds.name}</span>
                 <span className="text-xs text-muted-foreground">{ds.tool_namespace}</span>
                 {oauthStatuses[ds.id]?.filter((e) => e.status === 'authenticated').length > 0 && (
                   <div className="flex flex-wrap gap-1 mt-1">

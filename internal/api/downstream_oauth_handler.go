@@ -261,7 +261,7 @@ func (h *downstreamOAuthHandler) status(w http.ResponseWriter, r *http.Request) 
 		seen[rule.AuthScopeID] = true
 
 		scope, err := h.store.GetAuthScope(ctx, rule.AuthScopeID)
-		if err != nil || scope.Type != "oauth2" {
+		if err != nil {
 			continue
 		}
 
@@ -273,19 +273,24 @@ func (h *downstreamOAuthHandler) status(w http.ResponseWriter, r *http.Request) 
 			RouteRuleID:   rule.ID,
 		}
 
-		if h.flowManager != nil {
-			status, expiresAt, err := h.flowManager.TokenStatus(ctx, scope.ID)
-			if err == nil {
-				switch status {
-				case "valid":
-					entry.Status = "authenticated"
-				case "expired", "refresh_needed":
-					entry.Status = "expired"
-				default:
-					entry.Status = "not_configured"
+		if scope.Type == "oauth2" {
+			if h.flowManager != nil {
+				status, expiresAt, err := h.flowManager.TokenStatus(ctx, scope.ID)
+				if err == nil {
+					switch status {
+					case "valid":
+						entry.Status = "authenticated"
+					case "expired", "refresh_needed":
+						entry.Status = "expired"
+					default:
+						entry.Status = "not_configured"
+					}
+					entry.ExpiresAt = expiresAt
 				}
-				entry.ExpiresAt = expiresAt
 			}
+		} else if len(scope.EncryptedData) > 0 {
+			// Non-OAuth scopes (env/header) with stored credentials.
+			entry.Status = "authenticated"
 		}
 		entries = append(entries, entry)
 	}
@@ -322,23 +327,27 @@ func GetAllDownstreamOAuthStatuses(
 		}
 		ds.Status = "not_configured"
 
-		// Find oauth scope for this server via route rules.
+		// Find auth scope for this server via route rules.
 		for _, rule := range rules {
 			if rule.DownstreamServerID != srv.ID || rule.AuthScopeID == "" {
 				continue
 			}
 			scope, err := s.GetAuthScope(ctx, rule.AuthScopeID)
-			if err != nil || scope.Type != "oauth2" {
+			if err != nil {
 				continue
 			}
-			if fm != nil {
-				status, _, _ := fm.TokenStatus(ctx, scope.ID)
-				switch status {
-				case "valid":
-					ds.Status = "authenticated"
-				case "expired", "refresh_needed":
-					ds.Status = "expired"
+			if scope.Type == "oauth2" {
+				if fm != nil {
+					status, _, _ := fm.TokenStatus(ctx, scope.ID)
+					switch status {
+					case "valid":
+						ds.Status = "authenticated"
+					case "expired", "refresh_needed":
+						ds.Status = "expired"
+					}
 				}
+			} else if len(scope.EncryptedData) > 0 {
+				ds.Status = "authenticated"
 			}
 			break
 		}
