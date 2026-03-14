@@ -121,30 +121,24 @@ func (h *handler) handleToolsList(
 		tools = append(tools, activeTools...)
 	}
 
-	// Include built-in tools based on server configuration.
-	if !codeModeOn && len(dynamicServers) > 0 {
-		tools = append(tools, searchToolDefinition())
-		tools = append(tools, loadToolDefinition())
-		tools = append(tools, unloadToolDefinition())
-	}
-
-	if h.approvals != nil {
-		tools = append(tools, approvalToolDefinitions()...)
-	}
-
-	if _, ok := h.manager.(CachingCaller); ok {
-		tools = append(tools, flushCacheToolDefinition())
-	}
-
-	// Code mode: replace individual tools with execute_code (with embedded API).
-	// Only include get_code_api when the API is too large to embed.
 	if codeModeOn {
-		execTool, apiEmbedded := h.buildCodeExecuteTool(ctx)
+		execTool, _ := h.buildCodeExecuteTool(ctx)
 		tools = append(tools, execTool)
-		if !apiEmbedded {
-			tools = append(tools, codeAPIToolDefinition())
-			// search_tools helps discover namespaces when API isn't embedded.
+		tools = append(tools, codeAPIToolDefinition())
+	} else {
+		// Include built-in tools based on server configuration.
+		if len(dynamicServers) > 0 {
 			tools = append(tools, searchToolDefinition())
+			tools = append(tools, loadToolDefinition())
+			tools = append(tools, unloadToolDefinition())
+		}
+
+		if h.approvals != nil {
+			tools = append(tools, approvalToolDefinitions()...)
+		}
+
+		if _, ok := h.manager.(CachingCaller); ok {
+			tools = append(tools, flushCacheToolDefinition())
 		}
 	}
 
@@ -235,6 +229,14 @@ func (h *handler) handleToolsCall(
 	// Normalize legacy mcplexer__ prefix to mcpx__ for backward compat.
 	req.Name = normalizeBuiltinName(req.Name)
 
+	if h.codeModeEnabled(ctx) && !isInternalCodeModeCall(ctx) && !isAllowedDirectCodeModeTool(req.Name) {
+		result := marshalErrorResult(
+			"Code mode is enabled. Direct tool calls are disabled; use mcpx__execute_code instead.",
+		)
+		h.recordAuditBlocked(ctx, req.Name, req.Arguments, nil, result, nil, start)
+		return result, nil
+	}
+
 	// Extract namespace from tool name (namespace__toolname).
 	originalTool := extractOriginalToolName(req.Name)
 
@@ -281,7 +283,15 @@ func (h *handler) handleToolsCall(
 
 	// Look up server name for clearer error messages.
 	serverName := routeResult.DownstreamServerID
-	if srv, err := h.store.GetDownstreamServer(ctx, routeResult.DownstreamServerID); err == nil {
+	if serverName == "" {
+		rpcErr := &RPCError{
+			Code:    CodeInternalError,
+			Message: "matched route has no downstream server configured",
+		}
+		h.recordAudit(ctx, req.Name, req.Arguments, routeResult, nil, rpcErr, start)
+		return nil, rpcErr
+	}
+	if srv, err := h.store.GetDownstreamServer(ctx, routeResult.DownstreamServerID); err == nil && srv != nil {
 		serverName = srv.Name
 	}
 
@@ -436,6 +446,15 @@ func extractOriginalToolName(namespacedTool string) string {
 		return after
 	}
 	return namespacedTool
+}
+
+func isAllowedDirectCodeModeTool(name string) bool {
+	switch normalizeBuiltinName(name) {
+	case "mcpx__execute_code", "mcpx__get_code_api":
+		return true
+	default:
+		return false
+	}
 }
 
 // formatDownstreamError produces a human-readable error message for downstream

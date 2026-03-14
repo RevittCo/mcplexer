@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -68,7 +68,7 @@ export function BulkEnableDialog({
           priority,
           workspace_id: workspace.id,
           path_glob: '**',
-          tool_match: ['*'],
+          tool_match: [],
           downstream_server_id: dsId,
           auth_scope_id: '',
           policy: 'allow' as const,
@@ -89,15 +89,13 @@ export function BulkEnableDialog({
     }
   }
 
-  // Reset state when dialog opens
-  const [prevOpen, setPrevOpen] = useState(open)
-  if (open && !prevOpen) {
+  useEffect(() => {
+    if (!open) return
     setSelected(new Set())
     setPriority(100)
     setApprovalMode('none')
     setShowDefaults(false)
-  }
-  if (open !== prevOpen) setPrevOpen(open)
+  }, [open])
 
   return (
     <Dialog open={open} onOpenChange={() => onClose()}>

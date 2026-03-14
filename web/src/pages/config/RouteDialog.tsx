@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -12,6 +12,7 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -38,7 +39,7 @@ export const emptyForm: RouteFormData = {
   priority: 100,
   workspace_id: '',
   path_glob: '**',
-  tool_match: ['*'],
+  tool_match: [],
   downstream_server_id: '',
   auth_scope_id: '',
   policy: 'allow',
@@ -76,27 +77,27 @@ export function RouteDialog({
 }: RouteDialogProps) {
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [chipInput, setChipInput] = useState('')
-  const [prevForm, setPrevForm] = useState(form)
-
-  if (form !== prevForm) {
-    setPrevForm(form)
-    setChipInput('')
-    if (form.path_glob !== '**' || form.tool_match.length > 0) {
-      setShowAdvanced(true)
-    }
-  }
 
   const hasNonDefaultAdvanced = form.path_glob !== '**' || form.tool_match.length > 0
 
+  useEffect(() => {
+    if (!open) return
+    setChipInput('')
+    setShowAdvanced(form.path_glob !== '**' || form.tool_match.length > 0)
+  }, [editing, open])
+
   function addChip() {
-    const val = chipInput.trim()
-    if (!val) return
-    setForm((f) => ({ ...f, tool_match: [...f.tool_match, val] }))
+    const value = chipInput.trim()
+    if (!value) return
+    setForm((current) => ({ ...current, tool_match: [...current.tool_match, value] }))
     setChipInput('')
   }
 
   function removeChip(index: number) {
-    setForm((f) => ({ ...f, tool_match: f.tool_match.filter((_, i) => i !== index) }))
+    setForm((current) => ({
+      ...current,
+      tool_match: current.tool_match.filter((_, currentIndex) => currentIndex !== index),
+    }))
   }
 
   return (
@@ -104,13 +105,18 @@ export function RouteDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{editing ? 'Edit Route' : 'Add Route'}</DialogTitle>
+          <DialogDescription>
+            Routes match a workspace path and tool pattern, then attach the chosen downstream
+            server and optional credential.
+          </DialogDescription>
         </DialogHeader>
+
         <div className="space-y-4">
           <div className="space-y-2">
             <Label className="text-xs text-muted-foreground">Name (optional)</Label>
             <Input
               value={form.name}
-              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+              onChange={(e) => setForm((current) => ({ ...current, name: e.target.value }))}
               placeholder="e.g. GitHub allow-all"
             />
           </div>
@@ -119,15 +125,15 @@ export function RouteDialog({
             <Label className="text-xs text-muted-foreground">Workspace</Label>
             <Select
               value={form.workspace_id}
-              onValueChange={(v) => setForm((f) => ({ ...f, workspace_id: v }))}
+              onValueChange={(value) => setForm((current) => ({ ...current, workspace_id: value }))}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Select workspace..." />
               </SelectTrigger>
               <SelectContent>
-                {workspaces.map((w) => (
-                  <SelectItem key={w.id} value={w.id}>
-                    {w.name}
+                {workspaces.map((workspace) => (
+                  <SelectItem key={workspace.id} value={workspace.id}>
+                    {workspace.name}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -135,21 +141,27 @@ export function RouteDialog({
           </div>
 
           <div className="space-y-2">
-            <Label className={`text-xs text-muted-foreground ${form.policy === 'deny' ? 'opacity-50' : ''}`}>
+            <Label
+              className={`text-xs text-muted-foreground ${form.policy === 'deny' ? 'opacity-50' : ''}`}
+            >
               Downstream Server
             </Label>
             <Select
               value={form.downstream_server_id}
-              onValueChange={(v) => setForm((f) => ({ ...f, downstream_server_id: v }))}
+              onValueChange={(value) =>
+                setForm((current) => ({ ...current, downstream_server_id: value }))
+              }
               disabled={form.policy === 'deny'}
             >
               <SelectTrigger>
-                <SelectValue placeholder={form.policy === 'deny' ? 'N/A for deny rules' : 'Select server...'} />
+                <SelectValue
+                  placeholder={form.policy === 'deny' ? 'N/A for deny rules' : 'Select server...'}
+                />
               </SelectTrigger>
               <SelectContent>
-                {downstreams.map((d) => (
-                  <SelectItem key={d.id} value={d.id}>
-                    {d.name}
+                {downstreams.map((downstream) => (
+                  <SelectItem key={downstream.id} value={downstream.id}>
+                    {downstream.name}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -157,12 +169,16 @@ export function RouteDialog({
           </div>
 
           <div className="space-y-2">
-            <Label className={`text-xs text-muted-foreground ${form.policy === 'deny' ? 'opacity-50' : ''}`}>
+            <Label
+              className={`text-xs text-muted-foreground ${form.policy === 'deny' ? 'opacity-50' : ''}`}
+            >
               Auth Scope
             </Label>
             <Select
               value={form.auth_scope_id || 'none'}
-              onValueChange={(v) => setForm((f) => ({ ...f, auth_scope_id: v === 'none' ? '' : v }))}
+              onValueChange={(value) =>
+                setForm((current) => ({ ...current, auth_scope_id: value === 'none' ? '' : value }))
+              }
               disabled={form.policy === 'deny'}
             >
               <SelectTrigger>
@@ -170,9 +186,9 @@ export function RouteDialog({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">None</SelectItem>
-                {authScopes.map((a) => (
-                  <SelectItem key={a.id} value={a.id}>
-                    {a.name}
+                {authScopes.map((scope) => (
+                  <SelectItem key={scope.id} value={scope.id}>
+                    {scope.name}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -184,13 +200,18 @@ export function RouteDialog({
               <Label className="text-xs text-muted-foreground">Policy</Label>
               <Select
                 value={form.policy}
-                onValueChange={(v) => {
-                  const policy = v as 'allow' | 'deny'
+                onValueChange={(value) => {
+                  const policy = value as 'allow' | 'deny'
                   if (policy === 'deny') {
-                    setForm((f) => ({ ...f, policy, downstream_server_id: '', auth_scope_id: '' }))
-                  } else {
-                    setForm((f) => ({ ...f, policy }))
+                    setForm((current) => ({
+                      ...current,
+                      policy,
+                      downstream_server_id: '',
+                      auth_scope_id: '',
+                    }))
+                    return
                   }
+                  setForm((current) => ({ ...current, policy }))
                 }}
               >
                 <SelectTrigger>
@@ -202,12 +223,15 @@ export function RouteDialog({
                 </SelectContent>
               </Select>
             </div>
+
             <div className="space-y-2">
               <Label className="text-xs text-muted-foreground">Priority</Label>
               <Input
                 type="number"
                 value={form.priority}
-                onChange={(e) => setForm((f) => ({ ...f, priority: Number(e.target.value) }))}
+                onChange={(e) =>
+                  setForm((current) => ({ ...current, priority: Number(e.target.value) }))
+                }
               />
             </div>
           </div>
@@ -218,7 +242,12 @@ export function RouteDialog({
                 <Label className="text-xs text-muted-foreground">Approval</Label>
                 <Select
                   value={form.approval_mode}
-                  onValueChange={(v) => setForm((f) => ({ ...f, approval_mode: v as 'none' | 'write' | 'all' }))}
+                  onValueChange={(value) =>
+                    setForm((current) => ({
+                      ...current,
+                      approval_mode: value as 'none' | 'write' | 'all',
+                    }))
+                  }
                 >
                   <SelectTrigger className="w-48">
                     <SelectValue />
@@ -231,10 +260,13 @@ export function RouteDialog({
                 </Select>
                 <p className="text-xs text-muted-foreground/60">
                   {form.approval_mode === 'none' && 'Tool calls execute without approval.'}
-                  {form.approval_mode === 'write' && 'Read-only tools execute freely; write/destructive tools require approval.'}
-                  {form.approval_mode === 'all' && 'All tool calls require approval before executing.'}
+                  {form.approval_mode === 'write' &&
+                    'Read-only tools execute freely; write or destructive tools require approval.'}
+                  {form.approval_mode === 'all' &&
+                    'Every tool call requires approval before execution.'}
                 </p>
               </div>
+
               {form.approval_mode !== 'none' && (
                 <div className="space-y-2">
                   <Label className="text-xs text-muted-foreground">Timeout (seconds)</Label>
@@ -242,11 +274,16 @@ export function RouteDialog({
                     type="number"
                     min={10}
                     value={form.approval_timeout}
-                    onChange={(e) => setForm((f) => ({ ...f, approval_timeout: Number(e.target.value) }))}
+                    onChange={(e) =>
+                      setForm((current) => ({
+                        ...current,
+                        approval_timeout: Number(e.target.value),
+                      }))
+                    }
                     className="w-32"
                   />
                   <p className="text-xs text-muted-foreground/60">
-                    How long to wait for approval before auto-denying.
+                    How long to wait for approval before auto-denying the call.
                   </p>
                 </div>
               )}
@@ -255,13 +292,13 @@ export function RouteDialog({
 
           <button
             type="button"
-            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-            onClick={() => setShowAdvanced(!showAdvanced)}
+            className="flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+            onClick={() => setShowAdvanced((current) => !current)}
           >
             {showAdvanced ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-            Advanced
+            Advanced matching
             {!showAdvanced && !hasNonDefaultAdvanced && (
-              <span className="text-muted-foreground/60"> — all paths, all tools</span>
+              <span className="text-muted-foreground/70">all paths, all tools</span>
             )}
           </button>
 
@@ -272,21 +309,28 @@ export function RouteDialog({
                 <Input
                   className="font-mono text-sm"
                   value={form.path_glob}
-                  onChange={(e) => setForm((f) => ({ ...f, path_glob: e.target.value }))}
+                  onChange={(e) =>
+                    setForm((current) => ({ ...current, path_glob: e.target.value }))
+                  }
                   placeholder="**"
                 />
                 <p className="text-xs text-muted-foreground/60">
-                  Matches workspace subpath. Default <code className="font-mono">**</code> matches everything.
+                  Matches the workspace subpath. Default <code className="font-mono">**</code>{' '}
+                  matches everything.
                 </p>
               </div>
 
               <div className="space-y-2">
                 <Label className="text-xs text-muted-foreground">Tool Match</Label>
-                <div className="flex flex-wrap gap-1 mb-2">
-                  {form.tool_match.map((pattern, i) => (
-                    <Badge key={i} variant="outline" className="gap-1 font-mono text-xs">
+                <div className="mb-2 flex flex-wrap gap-1">
+                  {form.tool_match.map((pattern, index) => (
+                    <Badge key={`${pattern}-${index}`} variant="outline" className="gap-1 font-mono text-xs">
                       {pattern}
-                      <button type="button" className="ml-0.5 hover:text-destructive" onClick={() => removeChip(i)}>
+                      <button
+                        type="button"
+                        className="ml-0.5 hover:text-destructive"
+                        onClick={() => removeChip(index)}
+                      >
                         <X className="h-3 w-3" />
                       </button>
                     </Badge>
@@ -305,18 +349,27 @@ export function RouteDialog({
                   placeholder="github__* (press Enter to add)"
                 />
                 <p className="text-xs text-muted-foreground/60">
-                  Tool glob patterns. Leave empty to match all tools.
+                  Leave blank to match every tool in the workspace.
                 </p>
               </div>
             </div>
           )}
         </div>
+
         {saveError && <p className="text-sm text-destructive">{saveError}</p>}
+
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button onClick={onSave} disabled={saving || !form.workspace_id}>
+          <Button
+            onClick={onSave}
+            disabled={
+              saving ||
+              !form.workspace_id ||
+              (form.policy === 'allow' && !form.downstream_server_id)
+            }
+          >
             {saving ? 'Saving...' : 'Save'}
           </Button>
         </DialogFooter>

@@ -28,7 +28,6 @@ import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { AuthScopeDialog, emptyAuthScopeForm } from './AuthScopeDialog'
 import type { AuthScopeFormData } from './AuthScopeDialog'
-import { ApiKeyDialog } from './ApiKeyDialog'
 import { redirectToOAuth } from '@/lib/safe-redirect'
 
 export function AuthScopesPage() {
@@ -44,7 +43,6 @@ export function AuthScopesPage() {
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<AuthScope | null>(null)
-  const [secretsTarget, setSecretsTarget] = useState<AuthScope | null>(null)
 
   function openCreate() {
     setEditing(null)
@@ -136,8 +134,15 @@ export function AuthScopesPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Credentials</h1>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div className="space-y-1">
+          <h1 className="text-2xl font-bold">Credentials</h1>
+          <p className="max-w-2xl text-sm text-muted-foreground">
+            Reusable auth material for downstream servers: environment variables for stdio
+            servers, HTTP headers for remote servers, or OAuth sessions for supported
+            integrations.
+          </p>
+        </div>
         <Button onClick={openCreate}>
           <Plus className="mr-2 h-4 w-4" />
           Add Credential
@@ -258,20 +263,20 @@ export function AuthScopesPage() {
                             </TooltipTrigger>
                             <TooltipContent>Delete</TooltipContent>
                           </Tooltip>
-                          {scope.type === 'env' && (
+                          {(scope.type === 'env' || scope.type === 'header') && (
                             <Tooltip>
                               <TooltipTrigger asChild>
                                 <Button
                                   variant="ghost"
                                   size="sm"
                                   className={`h-7 w-7 p-0 ${scope.has_secrets ? 'text-emerald-600 hover:bg-emerald-500/10' : 'text-amber-600 hover:bg-amber-500/10'}`}
-                                  onClick={() => setSecretsTarget(scope)}
+                                  onClick={() => openEdit(scope)}
                                 >
                                   <Key className="h-3.5 w-3.5" />
                                 </Button>
                               </TooltipTrigger>
                               <TooltipContent>
-                                {scope.has_secrets ? 'Manage Secrets' : 'Add Secrets'}
+                                {scope.has_secrets ? 'Manage Secret Material' : 'Add Secret Material'}
                               </TooltipContent>
                             </Tooltip>
                           )}
@@ -339,19 +344,6 @@ export function AuthScopesPage() {
         variant="destructive"
         onConfirm={confirmDelete}
       />
-
-      {secretsTarget && (
-        <ApiKeyDialog
-          open={!!secretsTarget}
-          onClose={() => {
-            setSecretsTarget(null)
-            refetch()
-          }}
-          authScopeId={secretsTarget.id}
-          authScopeName={secretsTarget.name}
-          serverName={secretsTarget.name}
-        />
-      )}
     </div>
   )
 }

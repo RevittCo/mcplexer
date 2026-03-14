@@ -45,8 +45,8 @@ func BuiltinToolDefaults() map[string]string {
 		"mcpx__list_pending_approvals": "List pending tool call approvals waiting for review. Returns approval IDs, tool names, justifications, and requesting agent info. Your own pending requests are excluded.",
 		"mcpx__approve_tool_call":      "Approve a pending tool call request. You cannot approve your own requests.",
 		"mcpx__deny_tool_call":         "Deny a pending tool call request. You cannot deny your own requests. A reason is required.",
-		"mcpx__execute_code":           "Execute JavaScript/TypeScript code with access to all loaded tool APIs. Tool functions are called synchronously (no await needed). Use get_code_api first to see available functions and their TypeScript signatures. Use print() to output results.",
-		"mcpx__get_code_api":           "Get TypeScript API definitions for all available tool functions. Returns type declarations showing function signatures, parameter types, and namespaces. Use this before execute_code to understand the available API.",
+		"mcpx__execute_code":           "Execute JavaScript code that batches multiple tool calls into one invocation. Chain results between calls — use the return value of one tool as input to the next. All functions are synchronous (no await). Use get_code_api to inspect available signatures. Use print() for output.",
+		"mcpx__get_code_api":           "Get TypeScript API definitions for the code-mode tool API. Returns type declarations showing function signatures, parameter types, and namespaces. Review these before writing execute_code scripts that batch multiple tool calls together.",
 	}
 }
 

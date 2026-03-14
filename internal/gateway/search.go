@@ -298,7 +298,7 @@ func formatSearchResults(tools []Tool) string {
 		}
 	}
 
-	b.WriteString("\nUse load_tools with tool names or patterns to make them available.\n")
+	b.WriteString("\nUse the returned tool names directly. In direct-call mode you can also use load_tools with tool names or patterns to make them available in tools/list.\n")
 	return b.String()
 }
 

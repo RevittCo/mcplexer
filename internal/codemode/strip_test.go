@@ -172,3 +172,36 @@ func TestStripTypeScript_PreservesNestedObjects(t *testing.T) {
 		t.Errorf("nested object literal stripped: %s", got)
 	}
 }
+
+func TestStripTypeScript_RemovesGeneratedAPIDeclarations(t *testing.T) {
+	code := `// Auto-generated MCPlexer Code API
+// Tool functions are synchronous — no await needed.
+
+declare namespace github {
+  interface ListIssuesParams {
+    owner: string;
+  }
+  function list_issues(params: ListIssuesParams): any;
+}
+
+/** Print output that will be returned to the caller. */
+declare function print(value: any): void;
+
+const issues = github.list_issues({ owner: "org" });
+print(issues);`
+
+	got := StripTypeScript(code)
+
+	if strings.Contains(got, "declare namespace") || strings.Contains(got, "function list_issues") {
+		t.Fatalf("generated declarations should be stripped, got: %s", got)
+	}
+	if strings.Contains(got, "declare function print") {
+		t.Fatalf("global declare function should be stripped, got: %s", got)
+	}
+	if !strings.Contains(got, `const issues = github.list_issues({ owner: "org" });`) {
+		t.Fatalf("tool call should remain after stripping, got: %s", got)
+	}
+	if !strings.Contains(got, "print(issues);") {
+		t.Fatalf("runtime print call should remain, got: %s", got)
+	}
+}

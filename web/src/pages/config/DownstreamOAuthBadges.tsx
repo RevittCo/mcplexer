@@ -41,7 +41,14 @@ export function getOAuthBadges(
         const expiring = entry.expires_at && (new Date(entry.expires_at).getTime() - Date.now()) < 7 * 24 * 60 * 60 * 1000
         if (entry.status === 'authenticated') {
           return (
-            <Badge key={entry.auth_scope_id} className={`text-xs border-0 ${expiring ? 'bg-amber-500/15 text-amber-600' : 'bg-emerald-500/15 text-emerald-600'}`}>
+            <Badge
+              key={entry.auth_scope_id}
+              className={`cursor-pointer text-xs border-0 hover:opacity-80 ${expiring ? 'bg-amber-500/15 text-amber-600' : 'bg-emerald-500/15 text-emerald-600'}`}
+              onClick={(e) => {
+                e.stopPropagation()
+                onConnect(ds)
+              }}
+            >
               {entry.auth_scope_name}
               {entry.expires_at && (
                 <span className="ml-1 opacity-70">
@@ -54,13 +61,29 @@ export function getOAuthBadges(
         }
         if (entry.status === 'expired') {
           return (
-            <Badge key={entry.auth_scope_id} variant="outline" className="text-xs text-amber-600 border-amber-300">
+            <Badge
+              key={entry.auth_scope_id}
+              variant="outline"
+              className="cursor-pointer text-xs text-amber-600 border-amber-300 hover:border-amber-500"
+              onClick={(e) => {
+                e.stopPropagation()
+                onConnect(ds)
+              }}
+            >
               {entry.auth_scope_name} — Expired
             </Badge>
           )
         }
         return (
-          <Badge key={entry.auth_scope_id} variant="outline" className="text-xs text-muted-foreground">
+          <Badge
+            key={entry.auth_scope_id}
+            variant="outline"
+            className="cursor-pointer text-xs text-muted-foreground hover:text-primary hover:border-primary"
+            onClick={(e) => {
+              e.stopPropagation()
+              onConnect(ds)
+            }}
+          >
             {entry.auth_scope_name}
           </Badge>
         )

@@ -106,8 +106,10 @@ func (m *mockStore) GetAuthScopeByName(_ context.Context, _ string) (*store.Auth
 func (m *mockStore) ListAuthScopes(_ context.Context) ([]store.AuthScope, error)          { return nil, nil }
 func (m *mockStore) UpdateAuthScope(_ context.Context, _ *store.AuthScope) error          { return nil }
 func (m *mockStore) DeleteAuthScope(_ context.Context, _ string) error                    { return nil }
-func (m *mockStore) UpdateAuthScopeTokenData(_ context.Context, _ string, _ []byte) error     { return nil }
-func (m *mockStore) UpdateAuthScopeEncryptedData(_ context.Context, _ string, _ []byte) error { return nil }
+func (m *mockStore) UpdateAuthScopeTokenData(_ context.Context, _ string, _ []byte) error { return nil }
+func (m *mockStore) UpdateAuthScopeEncryptedData(_ context.Context, _ string, _ []byte) error {
+	return nil
+}
 
 // Stubs — OAuthProviderStore.
 func (m *mockStore) CreateOAuthProvider(_ context.Context, _ *store.OAuthProvider) error { return nil }
@@ -263,6 +265,11 @@ func newTestHandler(lister ToolLister, servers []store.DownstreamServer) (*handl
 	h.sessions.clientPath = "/test"
 	h.sessions.wsChain = []routing.WorkspaceAncestor{{ID: "ws-global", RootPath: "/"}}
 	return h, ms
+}
+
+func enableCodeMode(h *handler, ms *mockStore) {
+	ms.settings = json.RawMessage(`{"code_mode_enabled":true}`)
+	h.settingsSvc = config.NewSettingsService(ms)
 }
 
 func toolNames(result json.RawMessage) []string {
@@ -754,6 +761,182 @@ func TestHandleToolsList_ExplicitlyLoadedToolsAppear(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("explicitly loaded tool not found in tools/list, got: %v", names)
+	}
+}
+
+func TestHandleToolsList_CodeModeOnlyExposesCodeTools(t *testing.T) {
+	servers := []store.DownstreamServer{
+		{ID: "gh-server", ToolNamespace: "github", Discovery: "static"},
+		{ID: "dyn-server", ToolNamespace: "linear", Discovery: "dynamic"},
+	}
+	lister := &mockToolLister{
+		tools: map[string]json.RawMessage{
+			"gh-server":  toolsJSON(Tool{Name: "create_issue", Description: "Create issue"}),
+			"dyn-server": toolsJSON(Tool{Name: "list_issues", Description: "List issues"}),
+		},
+	}
+
+	h, ms := newTestHandler(lister, servers)
+	enableCodeMode(h, ms)
+
+	result, rpcErr := h.handleToolsList(context.Background())
+	if rpcErr != nil {
+		t.Fatalf("unexpected error: code=%d msg=%s", rpcErr.Code, rpcErr.Message)
+	}
+
+	names := toolNames(result)
+	want := []string{"mcpx__execute_code", "mcpx__get_code_api"}
+	if len(names) != len(want) {
+		t.Fatalf("got %v, want %v", names, want)
+	}
+	for i := range want {
+		if names[i] != want[i] {
+			t.Fatalf("tool[%d] = %q, want %q", i, names[i], want[i])
+		}
+	}
+}
+
+func TestHandleToolsCall_CodeModeBlocksDirectDownstreamCalls(t *testing.T) {
+	servers := []store.DownstreamServer{
+		{ID: "gh-server", ToolNamespace: "github", Discovery: "static"},
+	}
+	lister := &mockToolLister{
+		tools: map[string]json.RawMessage{
+			"gh-server": toolsJSON(Tool{Name: "create_issue", Description: "Create issue"}),
+		},
+	}
+
+	h, ms := newTestHandler(lister, servers)
+	enableCodeMode(h, ms)
+
+	params, _ := json.Marshal(CallToolRequest{
+		Name:      "github__create_issue",
+		Arguments: json.RawMessage(`{"title":"bug"}`),
+	})
+	result, rpcErr := h.handleToolsCall(context.Background(), params)
+	if rpcErr != nil {
+		t.Fatalf("unexpected RPC error: code=%d msg=%s", rpcErr.Code, rpcErr.Message)
+	}
+	if lister.callCount != 0 {
+		t.Fatalf("downstream tool should not be called directly in code mode, got %d calls", lister.callCount)
+	}
+
+	var tr CallToolResult
+	if err := json.Unmarshal(result, &tr); err != nil {
+		t.Fatalf("unmarshal result: %v", err)
+	}
+	if !tr.IsError || len(tr.Content) == 0 || !contains(tr.Content[0].Text, "mcpx__execute_code") {
+		t.Fatalf("expected direct-call block message, got: %+v", tr)
+	}
+}
+
+func TestHandleToolsCall_CodeModeBlocksDirectBuiltinCalls(t *testing.T) {
+	servers := []store.DownstreamServer{
+		{ID: "dyn-server", ToolNamespace: "dynns", Discovery: "dynamic"},
+	}
+	lister := &mockToolLister{
+		tools: map[string]json.RawMessage{
+			"dyn-server": toolsJSON(Tool{Name: "search_stuff", Description: "Search stuff"}),
+		},
+	}
+
+	h, ms := newTestHandler(lister, servers)
+	enableCodeMode(h, ms)
+
+	params, _ := json.Marshal(CallToolRequest{
+		Name:      "mcpx__search_tools",
+		Arguments: json.RawMessage(`{"query":"search"}`),
+	})
+	result, rpcErr := h.handleToolsCall(context.Background(), params)
+	if rpcErr != nil {
+		t.Fatalf("unexpected RPC error: code=%d msg=%s", rpcErr.Code, rpcErr.Message)
+	}
+
+	var tr CallToolResult
+	if err := json.Unmarshal(result, &tr); err != nil {
+		t.Fatalf("unmarshal result: %v", err)
+	}
+	if !tr.IsError || len(tr.Content) == 0 || !contains(tr.Content[0].Text, "mcpx__execute_code") {
+		t.Fatalf("expected direct-call block message, got: %+v", tr)
+	}
+}
+
+func TestHandleToolsCall_CodeModeExecuteCodeCanCallDownstreamTools(t *testing.T) {
+	lister := &mockToolLister{
+		tools: map[string]json.RawMessage{
+			"gh-server": toolsJSON(Tool{
+				Name:        "create_issue",
+				Description: "Create issue",
+				InputSchema: json.RawMessage(`{"type":"object","properties":{"title":{"type":"string"}}}`),
+			}),
+		},
+	}
+
+	ms := &mockStore{
+		servers: []store.DownstreamServer{
+			{ID: "gh-server", ToolNamespace: "github", Discovery: "static"},
+			{
+				ID: "mcpx-builtin", Name: "MCPlexer Built-in Tools",
+				Transport: "internal", ToolNamespace: "mcpx", Discovery: "static",
+			},
+		},
+		capUpdates: make(map[string]json.RawMessage),
+		settings:   json.RawMessage(`{"code_mode_enabled":true}`),
+		workspaces: []mockWorkspace{{id: "ws-global", rootPath: "/"}},
+		routeRules: map[string][]store.RouteRule{
+			"ws-global": {
+				{
+					ID: "builtin-allow", WorkspaceID: "ws-global",
+					Priority: 100, PathGlob: "**", Policy: "allow",
+					ToolMatch:          json.RawMessage(`["mcpx__*"]`),
+					DownstreamServerID: "mcpx-builtin",
+				},
+				{
+					ID: "allow-gh", WorkspaceID: "ws-global",
+					Priority: 10, PathGlob: "**", Policy: "allow",
+					ToolMatch:          json.RawMessage(`["github__*"]`),
+					DownstreamServerID: "gh-server",
+				},
+			},
+		},
+	}
+	h := newHandler(
+		ms,
+		routing.NewEngine(ms),
+		lister,
+		nil,
+		TransportSocket,
+		nil,
+		config.NewSettingsService(ms),
+		nil,
+		nil,
+	)
+	h.sessions.clientPath = "/test"
+	h.sessions.wsChain = []routing.WorkspaceAncestor{{ID: "ws-global", RootPath: "/"}}
+
+	params, _ := json.Marshal(CallToolRequest{
+		Name: "mcpx__execute_code",
+		Arguments: json.RawMessage(`{
+			"code": "github.create_issue({ title: 'bug' }); print('ok');"
+		}`),
+	})
+	result, rpcErr := h.handleToolsCall(context.Background(), params)
+	if rpcErr != nil {
+		t.Fatalf("unexpected RPC error: code=%d msg=%s", rpcErr.Code, rpcErr.Message)
+	}
+	if lister.callCount != 1 {
+		t.Fatalf("expected 1 downstream call via execute_code, got %d", lister.callCount)
+	}
+	if lister.lastCall.toolName != "create_issue" {
+		t.Fatalf("tool name = %q, want %q", lister.lastCall.toolName, "create_issue")
+	}
+
+	var tr CallToolResult
+	if err := json.Unmarshal(result, &tr); err != nil {
+		t.Fatalf("unmarshal result: %v", err)
+	}
+	if len(tr.Content) == 0 || !contains(tr.Content[0].Text, "ok") {
+		t.Fatalf("expected execute_code output, got: %+v", tr)
 	}
 }
 

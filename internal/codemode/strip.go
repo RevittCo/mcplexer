@@ -9,6 +9,12 @@ import (
 // These are intentionally conservative — only matching patterns that are
 // unambiguously TypeScript and never valid JavaScript.
 var (
+	// Matches generated declaration blocks like:
+	//   declare namespace github { ... }
+	// The outer closing brace is expected at the start of a line, which matches
+	// our generated API format and avoids swallowing arbitrary JS blocks.
+	reDeclareNamespace = regexp.MustCompile(`(?ms)^\s*declare\s+namespace\s+\w+\s*\{.*?^\s*\}\s*\n?`)
+
 	// Matches `interface Name { ... }` blocks (including multiline).
 	// Uses a greedy match to handle nested braces from inline object types
 	// like `config: { name: string; count: number }`.
@@ -36,6 +42,13 @@ var (
 	// Safe: `declare` is never valid JS.
 	reDeclare = regexp.MustCompile(`(?m)^\s*declare\s+`)
 
+	// Matches TypeScript declaration signatures like:
+	//   function print(value: any): void;
+	// These can appear after stripping `declare`.
+	reFunctionDeclaration = regexp.MustCompile(
+		`(?m)^\s*function\s+\w+\s*\([^)]*\)\s*(?::\s*[^;{]+)?;\s*\n?`,
+	)
+
 	// Matches generated header comments.
 	reGenComment = regexp.MustCompile(`(?m)^//\s*Auto-generated.*\n|^//\s*Tool functions.*\n`)
 )
@@ -43,13 +56,18 @@ var (
 // StripTypeScript removes TypeScript-specific syntax from code, producing
 // valid JavaScript that can be executed in Goja. This handles the constrained
 // subset of TypeScript that LLMs generate for our code API:
+//   - Generated `declare namespace ... {}` blocks from get_code_api
 //   - Interface declarations
 //   - Type annotations on variable declarations (const x: Type = ...)
 //   - Type casts (as Type)
+//   - Declaration-only `function foo(...): Type;` signatures
 //   - declare keywords
 //
 // Intentionally does NOT strip `: value` in object literals like { key: value }.
 func StripTypeScript(code string) string {
+	// Remove generated namespace declaration blocks before anything else.
+	code = reDeclareNamespace.ReplaceAllString(code, "")
+
 	// Remove interface blocks first.
 	code = reInterface.ReplaceAllString(code, "")
 
@@ -61,6 +79,9 @@ func StripTypeScript(code string) string {
 
 	// Remove `declare` keyword (keep the rest of the line).
 	code = reDeclare.ReplaceAllString(code, "")
+
+	// Remove declaration-only function signatures.
+	code = reFunctionDeclaration.ReplaceAllString(code, "")
 
 	// Remove generated header comments.
 	code = reGenComment.ReplaceAllString(code, "")
