@@ -106,7 +106,7 @@ func (h *handler) handleInitialize(
 		Capabilities: ServerCapability{
 			Tools: &ToolCapability{ListChanged: true},
 		},
-		ServerInfo: ServerInfo{Name: "mcplexer", Version: "0.1.4"},
+		ServerInfo: ServerInfo{Name: "mcplexer", Version: "0.1.6"},
 	}
 
 	data, err := json.Marshal(result)
