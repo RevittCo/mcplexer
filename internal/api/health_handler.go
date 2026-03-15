@@ -23,5 +23,5 @@ func healthCheck(w http.ResponseWriter, _ *http.Request) {
 		Mode:          "http",
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	_ = json.NewEncoder(w).Encode(resp)
 }

@@ -14,7 +14,7 @@ func TestSeedDefaultWorkspaces_EnsuresGlobalWhenWorkspaceExists(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	if err := db.CreateWorkspace(ctx, &store.Workspace{
 		ID:            "personal",

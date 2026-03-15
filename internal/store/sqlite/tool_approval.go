@@ -63,7 +63,7 @@ func (d *DB) ListPendingApprovals(ctx context.Context) ([]store.ToolApproval, er
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []store.ToolApproval
 	for rows.Next() {

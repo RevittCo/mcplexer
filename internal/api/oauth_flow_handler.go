@@ -168,7 +168,7 @@ func (h *oauthFlowHandler) callback(w http.ResponseWriter, r *http.Request) {
 	// subsequent navigation as same-origin (avoids Sec-Fetch-Site: cross-site).
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	fmt.Fprint(w, `<!DOCTYPE html><html><head><meta http-equiv="refresh" content="0;url=/config/auth-scopes"></head>`+
+	_, _ = fmt.Fprint(w, `<!DOCTYPE html><html><head><meta http-equiv="refresh" content="0;url=/config/auth-scopes"></head>`+
 		`<body><p>Authentication successful. Redirecting&hellip;</p></body></html>`)
 }
 

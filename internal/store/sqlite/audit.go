@@ -82,7 +82,7 @@ func (d *DB) QueryAuditRecords(
 	if err != nil {
 		return nil, 0, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []store.AuditRecord
 	for rows.Next() {
@@ -162,7 +162,7 @@ func (d *DB) GetDashboardTimeSeries(
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []store.TimeSeriesPoint
 	for rows.Next() {
@@ -197,7 +197,7 @@ func (d *DB) GetDashboardTimeSeriesBucketed(
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []store.TimeSeriesPoint
 	for rows.Next() {
@@ -236,7 +236,7 @@ func (d *DB) GetToolLeaderboard(
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []store.ToolLeaderboardEntry
 	for rows.Next() {
@@ -294,7 +294,7 @@ func (d *DB) GetServerHealth(
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []store.ServerHealthEntry
 	for rows.Next() {
@@ -357,7 +357,7 @@ func (d *DB) GetErrorBreakdown(
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []store.ErrorBreakdownEntry
 	for rows.Next() {
@@ -390,7 +390,7 @@ func (d *DB) GetRouteHitMap(
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []store.RouteHitEntry
 	for rows.Next() {

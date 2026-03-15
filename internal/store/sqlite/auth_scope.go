@@ -90,7 +90,7 @@ func (d *DB) ListAuthScopes(ctx context.Context) ([]store.AuthScope, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []store.AuthScope
 	for rows.Next() {

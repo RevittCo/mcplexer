@@ -120,7 +120,7 @@ func (e *Executor) Execute(
 	if err != nil {
 		return nil, fmt.Errorf("http request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Read response body with truncation.
 	respBody, err := readTruncated(resp.Body, maxResponseBytes)

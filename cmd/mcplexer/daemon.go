@@ -62,7 +62,7 @@ func daemonStart(args []string) error {
 			return fmt.Errorf("daemon already running (PID %d)", pid)
 		}
 		// Stale PID file
-		os.Remove(filepath.Join(dir, pidFile))
+		_ = os.Remove(filepath.Join(dir, pidFile))
 	}
 
 	if launchdInstalled() {
@@ -122,12 +122,12 @@ func daemonStart(args []string) error {
 	pidPath := filepath.Join(dir, pidFile)
 	if err := os.WriteFile(pidPath, []byte(strconv.Itoa(pid)), 0644); err != nil {
 		// Kill the child if we can't write PID
-		cmd.Process.Kill()
+		_ = cmd.Process.Kill()
 		return fmt.Errorf("write pid file: %w", err)
 	}
 
 	// Release the child process so it survives our exit
-	cmd.Process.Release()
+	_ = cmd.Process.Release()
 
 	fmt.Printf("MCPlexer daemon started on %s (PID %d)\n", addr, pid)
 	fmt.Printf("  Logs: %s\n", logPath)
@@ -157,12 +157,12 @@ func daemonStop() error {
 
 	proc, err := os.FindProcess(pid)
 	if err != nil {
-		os.Remove(filepath.Join(dir, pidFile))
+		_ = os.Remove(filepath.Join(dir, pidFile))
 		return fmt.Errorf("find process %d: %w", pid, err)
 	}
 
 	if err := signalTerminate(proc); err != nil {
-		os.Remove(filepath.Join(dir, pidFile))
+		_ = os.Remove(filepath.Join(dir, pidFile))
 		return fmt.Errorf("send SIGTERM to PID %d: %w", pid, err)
 	}
 
@@ -174,7 +174,7 @@ func daemonStop() error {
 		time.Sleep(100 * time.Millisecond)
 	}
 
-	os.Remove(filepath.Join(dir, pidFile))
+	_ = os.Remove(filepath.Join(dir, pidFile))
 	fmt.Println("MCPlexer daemon stopped")
 	return nil
 }
@@ -202,7 +202,7 @@ func daemonStatus() error {
 	}
 
 	if !processAlive(pid) {
-		os.Remove(filepath.Join(dir, pidFile))
+		_ = os.Remove(filepath.Join(dir, pidFile))
 		fmt.Println("MCPlexer daemon: not running (stale PID file cleaned)")
 		return nil
 	}

@@ -144,7 +144,7 @@ func (inst *Instance) start(ctx context.Context) error {
 	initCtx, initCancel := context.WithTimeout(childCtx, 30*time.Second)
 	if err := inst.initialize(initCtx, stdin, stdout); err != nil {
 		initCancel()
-		cmd.Process.Kill()
+		_ = cmd.Process.Kill()
 		cancel()
 		inst.state = StateStopped
 		return fmt.Errorf("initialize: %w", err)
@@ -386,7 +386,7 @@ func (inst *Instance) stop() {
 	case <-inst.done:
 	case <-time.After(5 * time.Second):
 		if inst.cmd != nil && inst.cmd.Process != nil {
-			inst.cmd.Process.Kill()
+			_ = inst.cmd.Process.Kill()
 		}
 	}
 

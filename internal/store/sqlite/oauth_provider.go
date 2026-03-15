@@ -91,7 +91,7 @@ func (d *DB) ListOAuthProviders(ctx context.Context) ([]store.OAuthProvider, err
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []store.OAuthProvider
 	for rows.Next() {

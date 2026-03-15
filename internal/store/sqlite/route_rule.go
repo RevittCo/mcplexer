@@ -83,7 +83,7 @@ func (d *DB) ListRouteRules(ctx context.Context, workspaceID string) ([]store.Ro
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []store.RouteRule
 	for rows.Next() {

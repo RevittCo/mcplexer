@@ -75,7 +75,7 @@ func (d *DB) ListDownstreamServers(ctx context.Context) ([]store.DownstreamServe
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []store.DownstreamServer
 	for rows.Next() {

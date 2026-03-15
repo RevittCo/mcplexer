@@ -16,7 +16,7 @@ func newTestDB(t *testing.T) *sqlite.DB {
 	if err != nil {
 		t.Fatalf("new test db: %v", err)
 	}
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() { _ = db.Close() })
 	return db
 }
 
@@ -358,7 +358,7 @@ func TestAuditCRUD(t *testing.T) {
 
 	// Query by tool name.
 	tool := "github__create_issue"
-	records, total, err = db.QueryAuditRecords(ctx, store.AuditFilter{
+	_, total, err = db.QueryAuditRecords(ctx, store.AuditFilter{
 		ToolName: &tool,
 		Limit:    10,
 	})

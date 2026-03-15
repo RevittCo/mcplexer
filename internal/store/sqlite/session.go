@@ -74,7 +74,7 @@ func (d *DB) ListActiveSessions(ctx context.Context) ([]store.Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []store.Session
 	for rows.Next() {

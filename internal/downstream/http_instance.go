@@ -207,7 +207,7 @@ func (h *HTTPInstance) doRPC(ctx context.Context, rpcReq jsonRPCRequest) (json.R
 	if err != nil {
 		return nil, fmt.Errorf("http post: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Capture session ID from server (returned on initialize, echoed thereafter).
 	if v := resp.Header.Get("Mcp-Session-Id"); v != "" {

@@ -40,7 +40,7 @@ func TestExecutor_Execute(t *testing.T) {
 			},
 			args: `{"channel_id": "ch_123"}`,
 			serverHandler: func(w http.ResponseWriter, r *http.Request) {
-				w.Write([]byte(`{"messages": []}`))
+				_, _ = w.Write([]byte(`{"messages": []}`))
 			},
 			wantContains: `"messages"`,
 			checkRequest: func(t *testing.T, r *http.Request, _ []byte) {
@@ -64,7 +64,7 @@ func TestExecutor_Execute(t *testing.T) {
 			args: `{"channel_id": "ch_456", "content": "hello", "type": "text"}`,
 			serverHandler: func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusCreated)
-				w.Write([]byte(`{"id": "msg_1"}`))
+				_, _ = w.Write([]byte(`{"id": "msg_1"}`))
 			},
 			wantContains: `"id"`,
 			checkRequest: func(t *testing.T, r *http.Request, body []byte) {
@@ -105,7 +105,7 @@ func TestExecutor_Execute(t *testing.T) {
 			},
 			args: `{"status": "active"}`,
 			serverHandler: func(w http.ResponseWriter, r *http.Request) {
-				w.Write([]byte(`[]`))
+				_, _ = w.Write([]byte(`[]`))
 			},
 			wantContains: "[]",
 			checkRequest: func(t *testing.T, r *http.Request, _ []byte) {
@@ -129,7 +129,7 @@ func TestExecutor_Execute(t *testing.T) {
 			},
 			args: `{}`,
 			serverHandler: func(w http.ResponseWriter, r *http.Request) {
-				w.Write([]byte(`ok`))
+				_, _ = w.Write([]byte(`ok`))
 			},
 			wantContains: "ok",
 			checkRequest: func(t *testing.T, r *http.Request, _ []byte) {
@@ -152,7 +152,7 @@ func TestExecutor_Execute(t *testing.T) {
 			},
 			args: `{}`,
 			serverHandler: func(w http.ResponseWriter, r *http.Request) {
-				w.Write([]byte(`ok`))
+				_, _ = w.Write([]byte(`ok`))
 			},
 			wantContains: "ok",
 			checkRequest: func(t *testing.T, r *http.Request, _ []byte) {
@@ -173,7 +173,7 @@ func TestExecutor_Execute(t *testing.T) {
 			args: `{}`,
 			serverHandler: func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusNotFound)
-				w.Write([]byte(`{"error": "not found"}`))
+				_, _ = w.Write([]byte(`{"error": "not found"}`))
 			},
 			wantIsError:  true,
 			wantContains: "HTTP 404",
@@ -190,7 +190,7 @@ func TestExecutor_Execute(t *testing.T) {
 			args: `{}`,
 			serverHandler: func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusInternalServerError)
-				w.Write([]byte(`internal server error`))
+				_, _ = w.Write([]byte(`internal server error`))
 			},
 			wantIsError:  true,
 			wantContains: "HTTP 500",
@@ -207,7 +207,7 @@ func TestExecutor_Execute(t *testing.T) {
 			},
 			args: `{"extra_field": "ignored"}`,
 			serverHandler: func(w http.ResponseWriter, r *http.Request) {
-				w.Write([]byte(`ok`))
+				_, _ = w.Write([]byte(`ok`))
 			},
 			wantContains: "ok",
 			checkRequest: func(t *testing.T, r *http.Request, body []byte) {
@@ -240,7 +240,7 @@ func TestExecutor_Execute(t *testing.T) {
 				handler = func(w http.ResponseWriter, r *http.Request) {
 					lastReq = r.Clone(r.Context())
 					lastBody, _ = io.ReadAll(r.Body)
-					r.Body.Close()
+					_ = r.Body.Close()
 					tt.serverHandler(w, r)
 				}
 			}
@@ -306,7 +306,7 @@ func TestExecutor_ResponseTruncation(t *testing.T) {
 	bigBody := strings.Repeat("x", 250*1024)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(bigBody))
+		_, _ = w.Write([]byte(bigBody))
 	}))
 	defer srv.Close()
 
@@ -381,11 +381,11 @@ func TestExecutor_PUTWithBody(t *testing.T) {
 	var receivedBody []byte
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		receivedBody, _ = io.ReadAll(r.Body)
-		r.Body.Close()
+		_ = r.Body.Close()
 		if r.Method != "PUT" {
 			t.Errorf("method = %q, want PUT", r.Method)
 		}
-		w.Write([]byte(`{"updated": true}`))
+		_, _ = w.Write([]byte(`{"updated": true}`))
 	}))
 	defer srv.Close()
 

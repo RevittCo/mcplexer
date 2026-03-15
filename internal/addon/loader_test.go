@@ -244,6 +244,7 @@ tools:
 		tool := reg.GetTool("clickup__get_messages")
 		if tool == nil {
 			t.Fatal("expected tool, got nil")
+			return
 		}
 		if tool.FullName != "clickup__get_messages" {
 			t.Errorf("FullName = %q, want %q", tool.FullName, "clickup__get_messages")

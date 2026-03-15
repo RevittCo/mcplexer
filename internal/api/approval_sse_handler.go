@@ -44,10 +44,10 @@ func (h *approvalSSEHandler) stream(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				continue
 			}
-			fmt.Fprintf(w, "data: %s\n\n", data)
+			_, _ = fmt.Fprintf(w, "data: %s\n\n", data)
 			flusher.Flush()
 		case <-heartbeat.C:
-			fmt.Fprint(w, ":\n\n")
+			_, _ = fmt.Fprint(w, ":\n\n")
 			flusher.Flush()
 		}
 	}
