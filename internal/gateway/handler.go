@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/revittco/mcplexer/internal/addon"
@@ -43,6 +44,12 @@ type handler struct {
 	notifier       Notifier // set at runtime for sending notifications
 	addonRegistry  *addon.Registry // nil = no addons loaded
 	addonExecutor  *addon.Executor // nil = no addons loaded
+
+	// bgCtx is a long-lived context for background goroutines (set from run()).
+	bgCtx context.Context
+	// backgroundRefreshOnce ensures we only trigger one background refresh
+	// after returning cached capabilities on the first tools/list call.
+	backgroundRefreshOnce sync.Once
 }
 
 // setNotifier sets the notifier for sending client notifications.

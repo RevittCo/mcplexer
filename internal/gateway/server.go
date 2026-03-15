@@ -106,6 +106,7 @@ func (s *Server) run(ctx context.Context, r io.Reader, w io.Writer) error {
 
 	s.w = w
 	s.handler.setNotifier(s)
+	s.handler.bgCtx = ctx
 
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)

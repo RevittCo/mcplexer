@@ -1162,6 +1162,7 @@ func TestHandleToolsCall_GitHubRepoAllowlistBlocksDisallowedRepo(t *testing.T) {
 	_, rpcErr := h.handleToolsCall(context.Background(), params)
 	if rpcErr == nil {
 		t.Fatal("expected route policy error")
+		return
 	}
 	if rpcErr.Code != CodeInvalidParams {
 		t.Fatalf("code = %d, want %d", rpcErr.Code, CodeInvalidParams)
@@ -1265,6 +1266,167 @@ func TestInjectCacheMeta(t *testing.T) {
 	}
 	if cacheMeta["age_seconds"] != float64(45) {
 		t.Errorf("age_seconds = %v, want 45", cacheMeta["age_seconds"])
+	}
+}
+
+// --- DB Cache Startup Tests ---
+
+// slowToolLister simulates a downstream manager that blocks for a long
+// time on ListToolsForServers. The ready channel gates when the call
+// completes so tests can control timing.
+type slowToolLister struct {
+	tools map[string]json.RawMessage
+	ready chan struct{} // close to unblock ListToolsForServers
+	calls int          // number of ListToolsForServers calls
+}
+
+func (m *slowToolLister) ListAllTools(_ context.Context) (map[string]json.RawMessage, error) {
+	return m.tools, nil
+}
+
+func (m *slowToolLister) ListToolsForServers(_ context.Context, serverIDs []string) (map[string]json.RawMessage, error) {
+	m.calls++
+	if m.ready != nil {
+		<-m.ready // block until test unblocks
+	}
+	result := make(map[string]json.RawMessage)
+	for _, id := range serverIDs {
+		if tools, ok := m.tools[id]; ok {
+			result[id] = tools
+		}
+	}
+	return result, nil
+}
+
+func (m *slowToolLister) Call(_ context.Context, _, _, _ string, _ json.RawMessage) (json.RawMessage, error) {
+	return nil, nil
+}
+
+func TestToolsList_DBCacheFallbackOnColdStart(t *testing.T) {
+	// Simulate a slow downstream that would time out — but the DB has cached
+	// capabilities from a previous run, so we should get those instantly.
+	ready := make(chan struct{})
+	lister := &slowToolLister{
+		tools: map[string]json.RawMessage{
+			"srv1": toolsJSON(Tool{Name: "create_issue", Description: "Create an issue"}),
+		},
+		ready: ready,
+	}
+
+	servers := []store.DownstreamServer{
+		{
+			ID: "srv1", Name: "Jira", Transport: "stdio",
+			ToolNamespace: "jira", Discovery: "static",
+			// Pre-populated DB cache from a previous run:
+			CapabilitiesCache: toolsJSON(Tool{Name: "create_issue", Description: "Create an issue (cached)"}),
+		},
+	}
+
+	h, _ := newTestHandler(lister, servers)
+	h.bgCtx = context.Background()
+
+	ctx := context.Background()
+	result, rpcErr := h.handleToolsList(ctx)
+	if rpcErr != nil {
+		t.Fatalf("unexpected error: %v", rpcErr)
+	}
+
+	// We should get tools back from the DB cache — not blocked on the slow lister.
+	names := toolNames(result)
+	if len(names) == 0 {
+		t.Fatal("expected tools from DB cache, got none")
+	}
+	found := false
+	for _, n := range names {
+		if n == "jira__create_issue" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected jira__create_issue in results, got %v", names)
+	}
+
+	// Unblock the background refresh.
+	close(ready)
+
+	// Give the background goroutine time to complete.
+	time.Sleep(100 * time.Millisecond)
+
+	// The slow lister should have been called exactly once (from the bg refresh).
+	if lister.calls != 1 {
+		t.Errorf("expected 1 background ListToolsForServers call, got %d", lister.calls)
+	}
+}
+
+func TestToolsList_NoCacheFallsBackToLive(t *testing.T) {
+	// No DB cache — should fall through to blocking live query.
+	lister := &mockToolLister{
+		tools: map[string]json.RawMessage{
+			"srv1": toolsJSON(Tool{Name: "read_file", Description: "Read a file"}),
+		},
+	}
+	servers := []store.DownstreamServer{
+		{
+			ID: "srv1", Name: "FS", Transport: "stdio",
+			ToolNamespace: "fs", Discovery: "static",
+			// No CapabilitiesCache — first-ever run.
+		},
+	}
+
+	h, _ := newTestHandler(lister, servers)
+	ctx := context.Background()
+
+	result, rpcErr := h.handleToolsList(ctx)
+	if rpcErr != nil {
+		t.Fatalf("unexpected error: %v", rpcErr)
+	}
+
+	names := toolNames(result)
+	found := false
+	for _, n := range names {
+		if n == "fs__read_file" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected fs__read_file, got %v", names)
+	}
+}
+
+func TestBuildFromDBCache_SkipsEmptyCache(t *testing.T) {
+	lister := &mockToolLister{}
+	servers := []store.DownstreamServer{
+		{ID: "srv1", Name: "A", ToolNamespace: "a", Discovery: "static"},
+		{ID: "srv2", Name: "B", ToolNamespace: "b", Discovery: "static",
+			CapabilitiesCache: json.RawMessage(`{}`)},
+	}
+	h, _ := newTestHandler(lister, servers)
+
+	result := h.buildFromDBCache(context.Background(), []string{"srv1", "srv2"})
+	if result != nil {
+		t.Errorf("expected nil for empty caches, got %v", result)
+	}
+}
+
+func TestBuildFromDBCache_ReturnsPopulatedCache(t *testing.T) {
+	lister := &mockToolLister{}
+	cached := toolsJSON(Tool{Name: "search", Description: "Search"})
+	servers := []store.DownstreamServer{
+		{ID: "srv1", Name: "A", ToolNamespace: "a", Discovery: "static",
+			CapabilitiesCache: cached},
+		{ID: "srv2", Name: "B", ToolNamespace: "b", Discovery: "static"},
+	}
+	h, _ := newTestHandler(lister, servers)
+
+	result := h.buildFromDBCache(context.Background(), []string{"srv1", "srv2"})
+	if result == nil {
+		t.Fatal("expected non-nil result")
+	}
+	if _, ok := result["srv1"]; !ok {
+		t.Error("expected srv1 in result")
+	}
+	if _, ok := result["srv2"]; ok {
+		t.Error("srv2 should not be in result (empty cache)")
 	}
 }
 

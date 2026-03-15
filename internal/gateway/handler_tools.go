@@ -186,19 +186,29 @@ func extractNamespacedTools(namespace string, toolsResult json.RawMessage) ([]To
 
 // cachedListToolsForServers uses the tools/list cache to avoid hammering
 // downstream servers on rapid tools/list calls. The cache has a 15s TTL.
+//
+// On the very first call (cold cache), it tries to return DB-cached
+// CapabilitiesCache instantly and refreshes live data in the background,
+// sending a tools/list_changed notification when done.
 func (h *handler) cachedListToolsForServers(ctx context.Context, serverIDs []string) (map[string]json.RawMessage, error) {
 	key := strings.Join(serverIDs, ",")
 
 	cached, err := h.toolsListCache.GetOrLoad(key, func() (json.RawMessage, error) {
+		// Try DB-cached capabilities for instant response on startup.
+		dbCached := h.buildFromDBCache(ctx, serverIDs)
+		if len(dbCached) > 0 {
+			h.triggerBackgroundRefresh(serverIDs)
+			data, err := json.Marshal(dbCached)
+			return data, err
+		}
+
+		// No DB cache (first-ever run) — must query live (blocking).
 		result, err := h.manager.ListToolsForServers(ctx, serverIDs)
 		if err != nil {
 			return nil, err
 		}
 		data, err := json.Marshal(result)
-		if err != nil {
-			return nil, err
-		}
-		return data, nil
+		return data, err
 	})
 	if err != nil {
 		return nil, err
@@ -209,6 +219,65 @@ func (h *handler) cachedListToolsForServers(ctx context.Context, serverIDs []str
 		return nil, err
 	}
 	return result, nil
+}
+
+// buildFromDBCache returns CapabilitiesCache from the DB for each server
+// that has a non-empty cache. Returns nil if no servers have cached data.
+func (h *handler) buildFromDBCache(ctx context.Context, serverIDs []string) map[string]json.RawMessage {
+	result := make(map[string]json.RawMessage, len(serverIDs))
+	for _, id := range serverIDs {
+		srv, err := h.store.GetDownstreamServer(ctx, id)
+		if err != nil || srv == nil {
+			continue
+		}
+		if len(srv.CapabilitiesCache) > 0 && string(srv.CapabilitiesCache) != "{}" {
+			result[id] = srv.CapabilitiesCache
+		}
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
+}
+
+// triggerBackgroundRefresh spawns a single goroutine (via sync.Once) that
+// queries downstream servers live, updates the DB and in-memory caches,
+// and sends a tools/list_changed notification when done.
+func (h *handler) triggerBackgroundRefresh(serverIDs []string) {
+	h.backgroundRefreshOnce.Do(func() {
+		ctx := h.bgCtx
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		go func() {
+			slog.Info("background refresh: querying downstream servers",
+				"servers", len(serverIDs))
+
+			result, err := h.manager.ListToolsForServers(ctx, serverIDs)
+			if err != nil {
+				slog.Warn("background refresh failed", "error", err)
+				return
+			}
+
+			// Update DB capabilities cache for each server.
+			for serverID, rawResult := range result {
+				if err := h.store.UpdateCapabilitiesCache(ctx, serverID, rawResult); err != nil {
+					slog.Warn("background refresh: failed to update capabilities cache",
+						"server", serverID, "error", err)
+				}
+			}
+
+			// Flush the in-memory cache so the next tools/list picks up
+			// the fresh data.
+			h.toolsListCache.Flush()
+
+			// Notify the client that tools have changed.
+			h.sendToolsListChanged()
+
+			slog.Info("background refresh complete",
+				"servers", len(result))
+		}()
+	})
 }
 
 // ToolsListStats returns cache statistics for the tools/list cache.
